@@ -47,34 +47,63 @@ export function Spark({ points, color = "#1070FE", h = 34 }: { points: number[];
 }
 
 /* ---------- 节点可用性热力图 ---------- */
-export type HeatNode = { name: string; free: number; total: number; model?: string; space?: string };
+export type HeatNode = { name: string; free: number; total: number; model?: string; group?: string };
 
 const heatClass = (free: number) =>
   free <= 0 ? "bg-heat-0" : free <= 2 ? "bg-heat-1" : free <= 4 ? "bg-heat-2" : free <= 6 ? "bg-heat-3" : "bg-heat-4";
 
 export function Heatmap({ nodes, onPick }: { nodes: HeatNode[]; onPick?: (n: HeatNode) => void }) {
   const [hover, setHover] = useState<{ n: HeatNode; x: number; y: number } | null>(null);
+
+  // 按资源组分行，有空闲卡的组排前面
+  const groups = new Map<string, HeatNode[]>();
+  for (const n of nodes) {
+    const key = n.group || "未分组";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(n);
+  }
+  const rows = [...groups.entries()]
+    .map(([name, list]) => ({
+      name,
+      list: [...list].sort((a, b) => b.free - a.free),
+      free: list.reduce((a, n) => a + n.free, 0),
+      total: list.reduce((a, n) => a + n.total, 0),
+    }))
+    .sort((a, b) => b.free - a.free || b.total - a.total);
+
   return (
     <div className="relative">
-      <div className="flex flex-wrap gap-1.5">
-        {nodes.map((n, i) => (
-          <button key={i}
-            onMouseEnter={(e) => { const r = (e.target as HTMLElement).getBoundingClientRect(); setHover({ n, x: r.left, y: r.top }); }}
-            onMouseLeave={() => setHover(null)}
-            onClick={() => onPick?.(n)}
-            className={clsx("w-5 h-5 rounded-cell transition-transform hover:scale-125 hover:ring-2 hover:ring-brand/40", heatClass(n.free))}
-            aria-label={`${n.name} 可用 ${n.free}/${n.total}`} />
+      <div className="space-y-1.5">
+        {rows.map((row) => (
+          <div key={row.name} className="flex items-center gap-3">
+            <div className="w-36 shrink-0 text-right">
+              <div className="text-[12px] truncate" title={row.name}>{row.name}</div>
+              <div className="text-[10px] text-ink-faint">
+                <b className={row.free ? "text-ok" : ""}>{row.free}</b> / {row.total} 张
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {row.list.map((n, i) => (
+                <button key={i}
+                  onMouseEnter={(e) => { const r = (e.target as HTMLElement).getBoundingClientRect(); setHover({ n, x: r.left, y: r.top }); }}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => onPick?.(n)}
+                  className={clsx("w-3.5 h-3.5 rounded-cell transition-transform hover:scale-150 hover:ring-2 hover:ring-brand/40", heatClass(n.free))}
+                  aria-label={`${n.name} 可用 ${n.free}/${n.total}`} />
+              ))}
+            </div>
+          </div>
         ))}
-        {!nodes.length && <span className="text-aux text-ink-faint">暂无节点数据</span>}
+        {!rows.length && <span className="text-aux text-ink-faint">暂无有 GPU 的节点</span>}
       </div>
       <div className="flex items-center gap-3 mt-3 text-[11px] text-ink-faint">
-        <span>空闲卡数</span>
-        {[["0 张", "bg-heat-0"], ["1-2", "bg-heat-1"], ["3-4", "bg-heat-2"], ["5-6", "bg-heat-3"], ["7-8", "bg-heat-4"]].map(([l, c]) => (
+        <span>每个方块 = 一个节点，颜色深浅 = 空闲卡数</span>
+        {[["0", "bg-heat-0"], ["1-2", "bg-heat-1"], ["3-4", "bg-heat-2"], ["5-6", "bg-heat-3"], ["7-8", "bg-heat-4"]].map(([l, c]) => (
           <span key={l} className="inline-flex items-center gap-1"><i className={clsx("w-3 h-3 rounded-cell inline-block", c)} />{l}</span>
         ))}
       </div>
       {hover && (
-        <div className="fixed z-50 pointer-events-none" style={{ left: hover.x - 40, top: hover.y - 74 }}>
+        <div className="fixed z-50 pointer-events-none" style={{ left: hover.x - 40, top: hover.y - 78 }}>
           <div className="bg-ink text-white rounded-ctl px-3 py-2 shadow-pop text-[12px] whitespace-nowrap">
             <div className="font-semibold">{hover.n.name}</div>
             <div className="text-white/80">可用 <b className="text-heat-2">{hover.n.free}</b> / {hover.n.total} 张</div>

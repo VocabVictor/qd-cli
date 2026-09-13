@@ -14,6 +14,7 @@ export function Overview({ state }: { state: AppState }) {
   const [mon, setMon] = useState<any>(null);
   const [create, setCreate] = useState<null | "job" | "dev">(null);
   const [metrics, setMetrics] = useState<Record<string, any[]>>({});
+  const [showCpuOnly, setShowCpuOnly] = useState(false);
 
   const { data, loading, refreshing, error, refresh } = useCached("overview", async () => {
     const [idle, jobs, devs] = await Promise.all([
@@ -37,7 +38,8 @@ export function Overview({ state }: { state: AppState }) {
       for (const n of (data.data?.nodes || [])) {
         const key = n.name || n.ip; if (seen.has(key)) continue; seen.add(key);
         if (!Number(n.gpuTotal)) continue;              // 只画有 GPU 的节点
-        out.push({ name: n.name || n.ip, free: Number(n.gpuLeft) || 0, total: Number(n.gpuTotal) || 0, model: asList(n.gpuModels)[0] });
+        out.push({ name: n.name || n.ip, free: Number(n.gpuLeft) || 0, total: Number(n.gpuTotal) || 0,
+          model: asList(n.gpuModels)[0], group: asList(n.resourceGroups)[0] });
       }
     return out.sort((a, b) => b.free - a.free);
   });
@@ -71,6 +73,16 @@ export function Overview({ state }: { state: AppState }) {
   const allFree = models.reduce((a, [, v]) => a + v.free, 0);
   const allTotal = models.reduce((a, [, v]) => a + v.total, 0);
 
+  // 有 GPU 的资源组排前面，按空闲卡降序；纯 CPU 组收到后面
+  const sortedGroups = [...data!.groups].sort((a: any, b: any) => {
+    const ga = Number(a.capacity?.gpuCount) || 0, gb = Number(b.capacity?.gpuCount) || 0;
+    if ((ga > 0) !== (gb > 0)) return gb - ga;
+    return (Number(b.idle?.gpuWholeCardsFree) || 0) - (Number(a.idle?.gpuWholeCardsFree) || 0);
+  });
+  const gpuGroups = sortedGroups.filter((g: any) => Number(g.capacity?.gpuCount) > 0);
+  const cpuGroups = sortedGroups.filter((g: any) => !Number(g.capacity?.gpuCount));
+  const listedGroups = showCpuOnly ? sortedGroups : gpuGroups;
+
   const openTerm = async (kind: "job" | "dev", id: string, sp: string) => {
     try { const r = await qget(`/api/terminal-url?kind=${kind}&id=${encodeURIComponent(id)}&instance=0${sp ? "&space=" + sp : ""}`);
       window.open(r.terminalUrl, "_blank"); }
@@ -99,13 +111,15 @@ export function Overview({ state }: { state: AppState }) {
                 <div className="text-[11px] text-ink-faint mt-1">空闲率 {v.total ? ((v.free / v.total) * 100).toFixed(1) : "0.0"}%</div>
               </div>
             ))}
-            <div className="border border-line rounded-card p-3 bg-canvas">
-              <div className="text-aux text-ink-soft">全部 GPU</div>
-              <div className="mt-1 mb-2"><span className="text-big">{allFree}</span>
-                <span className="text-body text-ink-faint"> / {allTotal} 张</span></div>
-              <Meter value={allFree} total={allTotal} tone="brand" />
-              <div className="text-[11px] text-ink-faint mt-1">空闲率 {allTotal ? ((allFree / allTotal) * 100).toFixed(1) : "0.0"}%</div>
-            </div>
+            {models.length > 1 && (
+              <div className="border border-line rounded-card p-3 bg-canvas">
+                <div className="text-aux text-ink-soft">全部 GPU</div>
+                <div className="mt-1 mb-2"><span className="text-big">{allFree}</span>
+                  <span className="text-body text-ink-faint"> / {allTotal} 张</span></div>
+                <Meter value={allFree} total={allTotal} tone="brand" />
+                <div className="text-[11px] text-ink-faint mt-1">空闲率 {allTotal ? ((allFree / allTotal) * 100).toFixed(1) : "0.0"}%</div>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -120,7 +134,7 @@ export function Overview({ state }: { state: AppState }) {
 
         {/* 资源组表 */}
         <Table head={<><Th>资源组</Th><Th>空间</Th><Th>GPU 型号</Th><Th num>空闲/总量</Th><Th num>单节点最大</Th><Th num>有卡节点</Th><Th>使用率</Th><Th>状态</Th></>}>
-          {data!.groups.length ? data!.groups.map((g: any, i: number) => {
+          {listedGroups.length ? listedGroups.map((g: any, i: number) => {
             const idle = g.idle || {}, cap = g.capacity || {};
             const total = Number(cap.gpuCount) || 0, free = Number(idle.gpuWholeCardsFree) || 0;
             const used = Math.max(0, total - free);
@@ -140,6 +154,11 @@ export function Overview({ state }: { state: AppState }) {
             );
           }) : <tr><Td className="text-ink-faint">无资源组</Td></tr>}
         </Table>
+        {cpuGroups.length > 0 && (
+          <button className="text-aux text-ink-faint hover:text-brand mt-2" onClick={() => setShowCpuOnly((v) => !v)}>
+            {showCpuOnly ? "隐藏" : "显示"}纯 CPU 资源组（{cpuGroups.length} 个）
+          </button>
+        )}
       </div>
 
       {/* 右侧常驻栏 */}
@@ -181,7 +200,7 @@ export function Overview({ state }: { state: AppState }) {
                   </div>
                   {ms.length ? (
                     <div className="grid grid-cols-2 gap-2 mt-2">
-                      {ms.map((m: any) => (
+                      {ms.filter((m: any) => Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) > 0 || !m.metric.startsWith("gpu")).map((m: any) => (
                         <div key={m.metric}>
                           <div className="flex items-baseline justify-between">
                             <span className="text-[11px] text-ink-faint">{m.label}</span>
@@ -212,7 +231,9 @@ export function Overview({ state }: { state: AppState }) {
                   <div className="flex items-center gap-1.5 mt-2">
                     <span className="tag tag-gray">ssh</span><span className="tag tag-gray">vscode</span>
                     <div className="flex-1" />
-                    <button className="btn btn-mini" onClick={() => openTerm("dev", id, d.spaceId || "")}><ExternalLink size={11} />连接</button>
+                    {String(field(d, ["jobenvStatus"], "")).toUpperCase() === "RUNNING"
+                      ? <button className="btn btn-mini" onClick={() => openTerm("dev", id, d.spaceId || "")}><ExternalLink size={11} />连接</button>
+                      : <button className="btn btn-mini" onClick={() => { location.hash = "devs"; }}>去启动</button>}
                   </div>
                 </div>
               );
