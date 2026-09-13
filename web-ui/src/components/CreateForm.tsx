@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Loader2, Save } from "lucide-react";
 import { api, qpost, pcall, eachSpace, spacesOf, AppState, asList, field } from "../lib/api";
 import { Drawer } from "./Drawer";
+import { dropCache } from "../lib/cache";
 import { useToast } from "./ui";
 
 type Kind = "job" | "dev";
@@ -124,6 +125,9 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
     try {
       if (kind === "job") { const r = await qpost("/api/job/submit", body); toast("已提交作业：" + ((r.data?.jobId) || "成功")); }
       else { await pcall("POST", "core", "/jobenv/devJob/new", body); toast("已创建开发机"); }
+      // 列表缓存作废，避免新建的东西要手动点刷新才出现
+      dropCache(kind === "job" ? "jobs" : "devs");
+      dropCache("overview");
       onDone(); onClose();
     } catch (e: any) { toast(e.message, true); }
     finally { setBusy(false); }

@@ -30,7 +30,10 @@ export function Ring({ pct, label, tone = "ok", size = 46 }: { pct: number; labe
 /* ---------- 迷你曲线 ---------- */
 export function Spark({ points, color = "#1070FE", h = 34 }: { points: number[]; color?: string; h?: number }) {
   const w = 120, pad = 2, n = points.length;
-  const top = Math.max(1, ...points);
+  // 纵轴按数据范围自适应：低占用（例如 CPU 3%）也能看出起伏，
+  // 同时留 20% 余量并保证最小量程，避免噪声被放大成剧烈波动。
+  const peak = n ? Math.max(...points) : 0;
+  const top = Math.max(peak * 1.2, 5);
   const path = n > 1 ? points.map((p, i) => {
     const x = pad + (i / (n - 1)) * (w - pad * 2);
     const y = h - pad - (p / top) * (h - pad * 2);

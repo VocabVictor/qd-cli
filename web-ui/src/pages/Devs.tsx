@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
 import { api, AppState, pcall, qget, field, spacesOf } from "../lib/api";
-import { useCached } from "../lib/cache";
+import { useCached, dropCache } from "../lib/cache";
 import { useList } from "../lib/table";
 import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, useToast } from "../components/ui";
 import { Drawer, Json } from "../components/Drawer";
@@ -26,7 +26,7 @@ export function Devs({ state }: { state: AppState }) {
   });
 
   const act = async (action: string, id: string, sp: string) => {
-    try { const r = await api.bulk(action, [id], sp); const bad = r.find((x: any) => !x.ok); bad ? toast(bad.error, true) : toast("已" + (action.includes("start") ? "启动" : "停止") + " " + id); refresh(); }
+    try { const r = await api.bulk(action, [id], sp); const bad = r.find((x: any) => !x.ok); bad ? toast(bad.error, true) : toast("已" + (action.includes("start") ? "启动" : "停止") + " " + id); dropCache("devs"); dropCache("overview"); refresh(); }
     catch (e: any) { toast(e.message, true); }
   };
   const term = async (id: string, sp: string) => {

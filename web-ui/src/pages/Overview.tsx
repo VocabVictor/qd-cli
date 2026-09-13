@@ -182,7 +182,7 @@ export function Overview({ state }: { state: AppState }) {
               const ms = metrics[id] || [];
               return (
                 <div key={i} className="border border-line rounded-card p-3 hover:border-brand/40 cursor-pointer transition-colors"
-                  onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: j.spaceId || "", kind: "job" })}>
+                  onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: j.spaceId || "", kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}>
                   <div className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0" />
                     <span className="text-body font-medium truncate flex-1">{field(j, ["jobName", "name"])}</span>

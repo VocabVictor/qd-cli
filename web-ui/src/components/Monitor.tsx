@@ -7,7 +7,7 @@ import { LineChart } from "./Chart";
 
 const COLORS: Record<string, string> = { gpu_util: "#7c5cfc", gpu_memory: "#b14eff", cpu: "#22c9a8", memory: "#f6a609" };
 
-export function Monitor({ job, onClose, baseUrl }: { job: { id: string; name?: string; space?: string; kind?: "job" | "dev" } | null; onClose: () => void; baseUrl?: string }) {
+export function Monitor({ job, onClose, baseUrl }: { job: { id: string; name?: string; space?: string; kind?: "job" | "dev"; gpu?: number } | null; onClose: () => void; baseUrl?: string }) {
   const toast = useToast();
   const [metrics, setMetrics] = useState<any[] | null>(null);
   const [termUrl, setTermUrl] = useState<string>("");
@@ -44,7 +44,7 @@ export function Monitor({ job, onClose, baseUrl }: { job: { id: string; name?: s
       {tab === "monitor" ? (
         !metrics ? <div className="flex items-center gap-2 text-ink-faint text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" />读取监控…</div> : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {metrics.map((m) => (
+            {metrics.filter((m: any) => (job.gpu ?? 1) > 0 || !m.metric.startsWith("gpu")).map((m) => (
               <Card key={m.metric} className="p-4">
                 <div className="flex items-baseline justify-between mb-1">
                   <span className="text-sm font-medium text-ink-soft">{m.label}</span>

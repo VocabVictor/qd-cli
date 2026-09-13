@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Loader2, Plus, Activity, Terminal as TermIcon, Copy, CopyPlus } from "lucide-react";
 import { api, AppState, pcall, spacesOf, fmtTime, field, asList } from "../lib/api";
-import { useCached } from "../lib/cache";
+import { useCached, dropCache } from "../lib/cache";
 import { useList } from "../lib/table";
 import { PageBar, Spinner, Card, Badge, Toolbar, useToast } from "../components/ui";
 import { Meter, Ring, Spark, Rail, RailCard } from "../components/viz";
@@ -57,7 +57,7 @@ export function Jobs({ state }: { state: AppState }) {
 
   const act = async (action: string, id: string, sp: string) => {
     try { const r = await api.bulk(action, [id], sp); const bad = r.find((x: any) => !x.ok);
-      bad ? toast(bad.error, true) : toast("已" + (action.includes("cancel") ? "取消" : "删除") + " " + id); refresh(); }
+      bad ? toast(bad.error, true) : toast("已" + (action.includes("cancel") ? "取消" : "删除") + " " + id); dropCache("jobs"); dropCache("overview"); refresh(); }
     catch (e: any) { toast(e.message, true); }
   };
 
@@ -169,7 +169,7 @@ export function Jobs({ state }: { state: AppState }) {
                       <div className="flex items-center gap-2 mb-1">
                         <Badge text={field(j, ["statusName", "status"])} />
                         <a className="text-[15px] font-semibold text-brand hover:underline cursor-pointer truncate"
-                          onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job" })}>
+                          onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}>
                           {field(j, ["jobName", "name"])}</a>
                       </div>
                       <div className="text-[11px] text-ink-faint flex items-center gap-1">
@@ -188,9 +188,12 @@ export function Jobs({ state }: { state: AppState }) {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      {isRun ? (ms.length ? (
-                        <div className="grid grid-cols-4 gap-3">
-                          {ms.map((m: any) => (
+                      {isRun ? (ms.length ? (() => {
+                        const hasGpu = Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) > 0;
+                        const shownMs = ms.filter((m: any) => hasGpu || !m.metric.startsWith("gpu"));
+                        return (
+                        <div className={"grid gap-3 " + (shownMs.length > 2 ? "grid-cols-4" : "grid-cols-2 max-w-md")}>
+                          {shownMs.map((m: any) => (
                             <div key={m.metric}>
                               <div className="text-[11px] text-ink-faint">{m.label}</div>
                               <div className="text-[15px] font-semibold leading-tight">{m.last != null ? m.last.toFixed(0) : "-"}<span className="text-[11px] font-normal text-ink-faint">{m.unit}</span></div>
@@ -198,13 +201,14 @@ export function Jobs({ state }: { state: AppState }) {
                             </div>
                           ))}
                         </div>
-                      ) : <div className="text-aux text-ink-faint flex items-center gap-1.5 py-4"><Loader2 size={12} className="animate-spin" />读取实时监控…</div>)
+                        ); })()
+                      : <div className="text-aux text-ink-faint flex items-center gap-1.5 py-4"><Loader2 size={12} className="animate-spin" />读取实时监控…</div>)
                         : <div className="text-aux text-ink-faint py-4">非运行状态，无实时监控</div>}
                     </div>
 
                     <div className="shrink-0 flex flex-col gap-1.5">
-                      {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job" })}><Activity size={12} />监控</button>}
-                      {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job" })}><TermIcon size={12} />终端</button>}
+                      {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}><Activity size={12} />监控</button>}
+                      {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}><TermIcon size={12} />终端</button>}
                       <button className="btn btn-mini" onClick={() => cloneJob(id, sp, String(field(j, ["jobName", "name"], "")))}><CopyPlus size={12} />复制</button>
                       <button className="btn btn-mini" onClick={() => act("job-cancel", id, sp)}>取消</button>
                       <button className="btn btn-mini btn-danger" onClick={() => act("job-delete", id, sp)}>删除</button>
