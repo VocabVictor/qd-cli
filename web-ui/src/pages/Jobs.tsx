@@ -6,6 +6,8 @@ import { useList } from "../lib/table";
 import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, useToast } from "../components/ui";
 import { Drawer, Json } from "../components/Drawer";
 import { Monitor } from "../components/Monitor";
+import { CreateForm } from "../components/CreateForm";
+import { Plus } from "lucide-react";
 import { Activity } from "lucide-react";
 
 const CHIPS: [string, string, (s: string) => boolean][] = [
@@ -25,6 +27,7 @@ export function Jobs({ state }: { state: AppState }) {
   const [chip, setChip] = useState("all");
   const [detail, setDetail] = useState<any>(null);
   const [mon, setMon] = useState<any>(null);
+  const [create, setCreate] = useState(false);
 
   const { data: all, loading, refreshing, error, refresh } = useCached<any[]>(
     `jobs:${scope}`, async () => { const d = await api.jobs(scope, 500); return (d.data?.jobList) || []; }, [scope]
@@ -55,6 +58,7 @@ export function Jobs({ state }: { state: AppState }) {
     <>
       <PageBar title="作业" right={
         <div className="flex items-center gap-2">
+          <button className="btn btn-pri" onClick={() => setCreate(true)}><Plus size={14} />提交作业</button>
           <select className="field w-28" value={scope} onChange={(e) => setScope(e.target.value)}>{["mine", "shared", "public", "all"].map((s) => <option key={s}>{s}</option>)}</select>
           <button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>
         </div>} />
@@ -104,6 +108,7 @@ export function Jobs({ state }: { state: AppState }) {
         </Table>
         <p className="text-xs text-ink-faint mt-3">显示 {shown.length} / {(all || []).length} 个（scope={scope}）。点表头排序。</p>
       </>}
+      <CreateForm kind="job" state={state} open={create} onClose={() => setCreate(false)} onDone={refresh} />
       <Monitor job={mon} onClose={() => setMon(null)} />
       <Drawer open={!!detail} onClose={() => setDetail(null)} title={detail && `作业 ${detail.id}`}>
         {detail?.loading ? <Spinner /> : detail?.error ? <Card className="p-4 text-sm">加载失败：{detail.error}</Card> : detail && <Json value={detail.data} />}
