@@ -53,7 +53,7 @@ export function App() {
 
   return (
     <ToastHost>
-      <div className="h-full w-1 fixed top-0 left-0 right-0 z-10" style={{ height: 4, width: "100%", background: "linear-gradient(90deg,#7c5cfc,#b14eff 45%,#f5578a)" }} />
+      <div className="h-full w-1 fixed top-0 left-0 right-0 z-10" style={{ height: 3, width: "100%", background: "#1070FE" }} />
       {booting ? (
         <div className="h-full grid place-items-center"><Spinner label="连接中…" /></div>
       ) : !state?.loggedIn ? (
@@ -63,7 +63,7 @@ export function App() {
           <aside className="w-56 shrink-0 border-r border-line bg-surface flex flex-col">
             <div className="px-5 pt-5 pb-4">
               <div className="flex items-center gap-2">
-                <span className="grid place-items-center w-8 h-8 rounded-xl text-white" style={{ background: "linear-gradient(135deg,#7c5cfc,#b14eff)" }}><Zap size={17} /></span>
+                <span className="grid place-items-center w-8 h-8 rounded-xl text-white" style={{ background: "#1070FE" }}><Zap size={17} /></span>
                 <div>
                   <div className="font-semibold leading-tight">qd</div>
                   <div className="text-[11px] text-ink-faint leading-tight">GPU 平台 · v{state.version}</div>
@@ -73,9 +73,8 @@ export function App() {
             <nav className="px-3 flex-1 space-y-0.5">
               {NAV.map(({ v, label, icon: Icon }) => (
                 <button key={v} onClick={() => go(v)}
-                  className={clsx("w-full flex items-center gap-2.5 px-3 h-10 rounded-xl text-sm transition-all",
-                    view === v ? "text-white font-medium shadow-card" : "text-ink-soft hover:bg-canvas")}
-                  style={view === v ? { background: "linear-gradient(135deg,#7c5cfc,#9b5cfc)" } : undefined}>
+                  className={clsx("w-full flex items-center gap-2.5 px-3 h-10 rounded-ctl text-[13px] transition-colors",
+                    view === v ? "bg-brand text-white font-medium" : "text-ink-soft hover:bg-canvas")}>
                   <Icon size={17} className={view === v ? "text-white" : "text-ink-faint"} />{label}
                 </button>
               ))}
@@ -90,7 +89,7 @@ export function App() {
               </div>
             </div>
           </aside>
-          <main className="flex-1 overflow-y-auto"><div className="max-w-[1200px] mx-auto px-6 py-6"><Page state={state} /></div></main>
+          <main className="flex-1 overflow-y-auto"><div className="max-w-[1560px] mx-auto px-6 py-5"><Page state={state} /></div></main>
         </div>
       )}
     </ToastHost>

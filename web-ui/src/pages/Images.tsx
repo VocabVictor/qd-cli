@@ -66,7 +66,7 @@ export function Images({ state }: { state: AppState }) {
         </>}>
           {shown.length ? shown.map((r, i) => (
             <tr key={i} className="hover:bg-canvas/60 cursor-pointer" onClick={() => openRepo(Number(r.imageRepositoryId) || 0, r._sp.id, field(r, ["originalName", "repositoryName"]))}>
-              <Td clip><div className="font-semibold text-brand-600">{field(r, ["originalName", "repositoryName"])}</div><div className="text-[11px] text-ink-faint">{field(r, ["repositoryName"], "")}</div></Td>
+              <Td clip><div className="font-semibold text-brand">{field(r, ["originalName", "repositoryName"])}</div><div className="text-[11px] text-ink-faint">{field(r, ["repositoryName"], "")}</div></Td>
               <Td>{r._sp.name}</Td>
               <Td num>{field(r, ["imageNum"])}</Td>
               <Td>{ACCESS[r.accessType] || r.accessType || "-"}</Td>

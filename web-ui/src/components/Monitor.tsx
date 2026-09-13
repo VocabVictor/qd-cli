@@ -65,7 +65,7 @@ export function Monitor({ job, onClose, baseUrl }: { job: { id: string; name?: s
           {termErr ? <Card className="p-4 text-sm">终端不可用：{termErr}</Card> :
             !termUrl ? <div className="flex items-center gap-2 text-ink-faint text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" />获取终端地址…</div> : (
               <>
-                <div className="rounded-xl2 overflow-hidden border border-line bg-black" style={{ height: 460 }}>
+                <div className="rounded-card overflow-hidden border border-line bg-black" style={{ height: 460 }}>
                   <iframe src={termUrl} title="terminal" className="w-full h-full" style={{ border: 0 }} />
                 </div>
                 <p className="text-xs text-ink-faint mt-2">若终端因平台安全策略无法内嵌显示，请点右上「新标签打开终端」。</p>

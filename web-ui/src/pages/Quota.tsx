@@ -16,7 +16,7 @@ function QuotaCard({ label, limitType, total, used, left, fmt, unit }: { label: 
     <Card className="p-4">
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-medium text-ink-soft">{label}</span>
-        {unlimited ? <span className="tag bg-brand-50 text-brand-600">无限制</span> : <span className="text-xs text-ink-faint">配额 {fmt(total)}{unit}</span>}
+        {unlimited ? <span className="tag bg-brand-50 text-brand">无限制</span> : <span className="text-xs text-ink-faint">配额 {fmt(total)}{unit}</span>}
       </div>
       <div className="mt-2 text-2xl font-semibold tracking-tight">{fmt(used)}<span className="text-sm text-ink-faint">{unit} 已用</span></div>
       {!unlimited && <><Bar used={used} total={total} /><div className="text-[11px] text-ink-faint mt-1">剩余 {fmt(left)}{unit}</div></>}
@@ -56,7 +56,7 @@ export function Quota({ state }: { state: AppState }) {
                     <Td><b>{g.graphicsCard}</b></Td>
                     <Td num>{g.cardCnt}</Td>
                     <Td num>{g.usedCardCnt}</Td>
-                    <Td num><b className={g.leftCardCnt > 0 ? "text-mint" : ""}>{g.leftCardCnt}</b></Td>
+                    <Td num><b className={g.leftCardCnt > 0 ? "text-ok" : ""}>{g.leftCardCnt}</b></Td>
                   </tr>
                 ))}
               </Table>

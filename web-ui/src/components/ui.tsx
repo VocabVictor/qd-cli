@@ -18,12 +18,12 @@ export function PageBar({ title, hint, right }: { title: string; hint?: string; 
 
 export function Tile({ label, value, unit, tone = "brand" }: { label: string; value: ReactNode; unit?: string; tone?: "brand" | "mint" | "rose" | "amber" }) {
   const wash = {
-    brand: "from-brand-50 to-white", mint: "from-mint/10 to-white",
-    rose: "from-rose/10 to-white", amber: "from-amber/10 to-white",
+    brand: "from-brand-50 to-white", mint: "from-ok-50 to-white",
+    rose: "from-danger-50 to-white", amber: "from-warn-50 to-white",
   }[tone];
-  const dot = { brand: "bg-brand", mint: "bg-mint", rose: "bg-rose", amber: "bg-amber" }[tone];
+  const dot = { brand: "bg-brand", mint: "bg-ok", rose: "bg-danger", amber: "bg-warn" }[tone];
   return (
-    <div className={clsx("rounded-xl2 border border-line p-4 bg-gradient-to-br", wash)}>
+    <div className={clsx("rounded-card border border-line p-4 bg-gradient-to-br", wash)}>
       <div className="flex items-center gap-2 text-xs font-medium text-ink-soft">
         <span className={clsx("w-1.5 h-1.5 rounded-full", dot)} />{label}
       </div>
@@ -35,8 +35,7 @@ export function Tile({ label, value, unit, tone = "brand" }: { label: string; va
 }
 
 const TONES: Record<string, string> = {
-  green: "bg-mint/10 text-mint", red: "bg-rose/10 text-rose", amber: "bg-amber/10 text-amber",
-  brand: "bg-brand-50 text-brand-600", gray: "bg-canvas text-ink-soft",
+  green: "tag-ok", red: "tag-danger", amber: "tag-warn", brand: "tag-brand", gray: "tag-gray",
 };
 export function Badge({ text }: { text: any }) {
   const s = String(text ?? "").toUpperCase();
@@ -115,7 +114,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
       <div className="fixed bottom-5 right-5 flex flex-col gap-2 z-50">
         {items.map((t) => (
           <div key={t.id} className={clsx("px-4 py-2.5 rounded-xl text-sm shadow-pop text-white max-w-sm",
-            t.err ? "bg-rose" : "bg-ink")}>{t.msg}</div>
+            t.err ? "bg-danger" : "bg-ink")}>{t.msg}</div>
         ))}
       </div>
     </ToastCtx.Provider>
