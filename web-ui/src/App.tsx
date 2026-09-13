@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
-import { Home, Rocket, Boxes, FolderKanban, Server, Package, Terminal, Settings as Cog, LogOut, Zap, Gauge } from "lucide-react";
+import { Home, Rocket, Boxes, FolderKanban, Server, Package, Terminal, Settings as Cog, LogOut, Zap, Gauge, Upload } from "lucide-react";
 import { api, AppState } from "./lib/api";
 import { ToastHost, Spinner } from "./components/ui";
 import { Login } from "./pages/Login";
@@ -13,6 +13,7 @@ import { Images } from "./pages/Images";
 import { Exec } from "./pages/Exec";
 import { SettingsPage } from "./pages/Settings";
 import { Quota } from "./pages/Quota";
+import { Transfer } from "./pages/Transfer";
 
 const NAV = [
   { v: "overview", label: "概览", icon: Home },
@@ -21,6 +22,7 @@ const NAV = [
   { v: "projects", label: "项目", icon: FolderKanban },
   { v: "nodes", label: "节点", icon: Server },
   { v: "quota", label: "配额", icon: Gauge },
+  { v: "transfer", label: "传输", icon: Upload },
   { v: "images", label: "镜像", icon: Package },
   { v: "exec", label: "远程执行", icon: Terminal },
   { v: "settings", label: "设置", icon: Cog },
@@ -28,7 +30,7 @@ const NAV = [
 
 const PAGES: Record<string, (p: { state: AppState }) => JSX.Element> = {
   overview: Overview, jobs: Jobs, devs: Devs, projects: Projects,
-  nodes: Nodes, quota: Quota, images: Images, exec: Exec, settings: SettingsPage,
+  nodes: Nodes, quota: Quota, transfer: Transfer, images: Images, exec: Exec, settings: SettingsPage,
 };
 
 export function App() {
