@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2, Plus, Boxes, Upload, Terminal as TermIcon, ExternalLink } from "lucide-react";
+import { RefreshCw, Loader2, Plus, Boxes, Upload, ExternalLink } from "lucide-react";
 import { api, AppState, pcall, eachSpace, asList, field, qget } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { Card, PageBar, Spinner, Table, Th, Td, Badge, useToast } from "../components/ui";
@@ -158,9 +158,9 @@ export function Overview({ state }: { state: AppState }) {
               <span className="flex items-center gap-1.5"><Upload size={13} />文件传输</span>
               <span className="text-[11px] text-ink-faint">SFTP 上传下载</span>
             </button>
-            <button className="btn h-auto py-2.5 flex-col gap-0.5" onClick={() => { location.hash = "exec"; }}>
-              <span className="flex items-center gap-1.5"><TermIcon size={13} />远程执行</span>
-              <span className="text-[11px] text-ink-faint">在线 Bash</span>
+            <button className="btn h-auto py-2.5 flex-col gap-0.5" onClick={() => { location.hash = "images"; }}>
+              <span className="flex items-center gap-1.5"><Boxes size={13} />镜像仓库</span>
+              <span className="text-[11px] text-ink-faint">选训练镜像</span>
             </button>
           </div>
         </RailCard>

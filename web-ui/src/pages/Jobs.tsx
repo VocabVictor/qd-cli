@@ -197,7 +197,7 @@ export function Jobs({ state }: { state: AppState }) {
         </RailCard>
         <RailCard title="常用工具">
           <div className="grid grid-cols-2 gap-2">
-            {[["开发机", "devs"], ["镜像仓库", "images"], ["文件传输", "transfer"], ["网页终端", "exec"]].map(([l, h]) => (
+            {[["开发机", "devs"], ["镜像仓库", "images"], ["文件传输", "transfer"], ["配额", "quota"]].map(([l, h]) => (
               <button key={h} className="btn h-auto py-2.5" onClick={() => { location.hash = h; }}>{l}</button>
             ))}
           </div>
