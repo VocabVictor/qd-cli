@@ -75,20 +75,20 @@ export function Heatmap({ nodes, onPick }: { nodes: HeatNode[]; onPick?: (n: Hea
     <div className="relative">
       <div className="space-y-1.5">
         {rows.map((row) => (
-          <div key={row.name} className="flex items-center gap-3">
-            <div className="w-36 shrink-0 text-right">
-              <div className="text-[12px] truncate" title={row.name}>{row.name}</div>
-              <div className="text-[10px] text-ink-faint">
+          <div key={row.name} className="flex items-center gap-3 py-0.5">
+            <div className="w-40 shrink-0 text-right">
+              <div className="text-[13px] font-medium truncate" title={row.name}>{row.name}</div>
+              <div className="text-[11px] text-ink-faint">
                 <b className={row.free ? "text-ok" : ""}>{row.free}</b> / {row.total} 张
               </div>
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {row.list.map((n, i) => (
                 <button key={i}
                   onMouseEnter={(e) => { const r = (e.target as HTMLElement).getBoundingClientRect(); setHover({ n, x: r.left, y: r.top }); }}
                   onMouseLeave={() => setHover(null)}
                   onClick={() => onPick?.(n)}
-                  className={clsx("w-3.5 h-3.5 rounded-cell transition-transform hover:scale-150 hover:ring-2 hover:ring-brand/40", heatClass(n.free))}
+                  className={clsx("w-5 h-5 rounded-cell transition-transform hover:scale-125 hover:ring-2 hover:ring-brand/40", heatClass(n.free))}
                   aria-label={`${n.name} 可用 ${n.free}/${n.total}`} />
               ))}
             </div>

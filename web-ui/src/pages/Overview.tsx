@@ -95,39 +95,29 @@ export function Overview({ state }: { state: AppState }) {
         <PageBar title="概览" hint="集群可用性一览，点节点方块可直接开任务"
           right={<button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>} />
 
-        {/* GPU 资源总览：按型号 */}
-        <Card className="card-pad mb-4">
-          <div className="flex items-baseline gap-2 mb-3">
-            <h2 className="text-h2">GPU 资源总览</h2>
-            <span className="text-aux text-ink-faint">各型号的空闲卡数 / 总量</span>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {models.map(([m, v]) => (
-              <div key={m} className="border border-line rounded-card p-3">
-                <div className="text-aux text-ink-soft truncate" title={m}>{m}</div>
-                <div className="mt-1 mb-2"><span className="text-big text-ok">{v.free}</span>
-                  <span className="text-body text-ink-faint"> / {v.total} 张</span></div>
-                <Meter value={v.free} total={v.total} tone="ok" />
-                <div className="text-[11px] text-ink-faint mt-1">空闲率 {v.total ? ((v.free / v.total) * 100).toFixed(1) : "0.0"}%</div>
-              </div>
-            ))}
-            {models.length > 1 && (
-              <div className="border border-line rounded-card p-3 bg-canvas">
-                <div className="text-aux text-ink-soft">全部 GPU</div>
-                <div className="mt-1 mb-2"><span className="text-big">{allFree}</span>
-                  <span className="text-body text-ink-faint"> / {allTotal} 张</span></div>
-                <Meter value={allFree} total={allTotal} tone="brand" />
-                <div className="text-[11px] text-ink-faint mt-1">空闲率 {allTotal ? ((allFree / allTotal) * 100).toFixed(1) : "0.0"}%</div>
-              </div>
-            )}
-          </div>
-        </Card>
-
         {/* 节点可用性热力图 */}
         <Card className="card-pad mb-4">
-          <div className="flex items-baseline gap-2 mb-3">
-            <h2 className="text-h2">节点 GPU 可用性</h2>
-            <span className="text-aux text-ink-faint">{(nodes || []).length} 个有卡节点，悬停看详情</span>
+          <div className="flex items-center flex-wrap gap-x-6 gap-y-2 mb-4">
+            <div>
+              <h2 className="text-h2">节点 GPU 可用性</h2>
+              <span className="text-aux text-ink-faint">{(nodes || []).length} 个有卡节点，悬停看详情，点方块直接开任务</span>
+            </div>
+            <div className="flex-1" />
+            <div className="flex items-end gap-6">
+              <div>
+                <div className="text-aux text-ink-soft">空闲整卡</div>
+                <div><span className="text-big text-ok">{allFree}</span>
+                  <span className="text-body text-ink-faint"> / {allTotal} 张</span></div>
+              </div>
+              <div>
+                <div className="text-aux text-ink-soft">空闲率</div>
+                <div className="text-[22px] font-semibold leading-tight">{allTotal ? ((allFree / allTotal) * 100).toFixed(1) : "0.0"}<span className="text-body font-normal text-ink-faint">%</span></div>
+              </div>
+              <div>
+                <div className="text-aux text-ink-soft">GPU 型号</div>
+                <div className="text-[13px] leading-tight pb-1">{models.map(([m]) => m).join(" / ") || "-"}</div>
+              </div>
+            </div>
           </div>
           <Heatmap nodes={nodes || []} onPick={(n) => { toast(`${n.name}：可用 ${n.free}/${n.total} 张`); setCreate("job"); }} />
         </Card>
