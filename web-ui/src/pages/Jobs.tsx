@@ -109,7 +109,7 @@ export function Jobs({ state }: { state: AppState }) {
         <p className="text-xs text-ink-faint mt-3">显示 {shown.length} / {(all || []).length} 个（scope={scope}）。点表头排序。</p>
       </>}
       <CreateForm kind="job" state={state} open={create} onClose={() => setCreate(false)} onDone={refresh} />
-      <Monitor job={mon} onClose={() => setMon(null)} />
+      <Monitor job={mon} onClose={() => setMon(null)} baseUrl={state.baseUrl} />
       <Drawer open={!!detail} onClose={() => setDetail(null)} title={detail && `作业 ${detail.id}`}>
         {detail?.loading ? <Spinner /> : detail?.error ? <Card className="p-4 text-sm">加载失败：{detail.error}</Card> : detail && <Json value={detail.data} />}
       </Drawer>

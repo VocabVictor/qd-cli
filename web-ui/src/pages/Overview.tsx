@@ -66,7 +66,7 @@ export function Overview({ state }: { state: AppState }) {
         }) : <tr><Td className="text-ink-faint">无资源组</Td></tr>}
       </Table>
       <p className="text-xs text-ink-faint mt-3">空闲整卡按节点粒度统计；"单节点最大"决定单实例最多能要几张卡。</p>
-      <Monitor job={mon} onClose={() => setMon(null)} />
+      <Monitor job={mon} onClose={() => setMon(null)} baseUrl={state.baseUrl} />
     </>
   );
 }

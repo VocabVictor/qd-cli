@@ -74,3 +74,15 @@ export async function eachSpace<T>(s: AppState, fn: (sp: { id: string; name: str
   );
   return results.filter((x): x is SpaceResult<T> => x !== null);
 }
+
+/** 平台返回的终端地址常指向公网 IP（浏览器走系统代理时连不上）。
+ *  把主机换成 baseUrl 的主机（内网地址），端口/路径/查询全部保留。 */
+export function localizeTerminalUrl(url: string, baseUrl?: string): string {
+  try {
+    if (!url || !baseUrl) return url;
+    const u = new URL(url), b = new URL(baseUrl);
+    if (u.hostname === b.hostname) return url;
+    u.hostname = b.hostname;
+    return u.toString();
+  } catch { return url; }
+}

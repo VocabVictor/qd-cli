@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
-import { api, AppState, pcall, qget, field, spacesOf } from "../lib/api";
+import { api, AppState, pcall, qget, field, spacesOf, localizeTerminalUrl } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { useList } from "../lib/table";
 import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, useToast } from "../components/ui";
@@ -30,7 +30,7 @@ export function Devs({ state }: { state: AppState }) {
     catch (e: any) { toast(e.message, true); }
   };
   const term = async (id: string, sp: string) => {
-    try { const r = await qget(`/api/terminal-url?kind=dev&id=${encodeURIComponent(id)}&instance=0${sp ? "&space=" + sp : ""}`); window.open(r.terminalUrl, "_blank"); } catch (e: any) { toast(e.message, true); }
+    try { const r = await qget(`/api/terminal-url?kind=dev&id=${encodeURIComponent(id)}&instance=0${sp ? "&space=" + sp : ""}`); window.open(localizeTerminalUrl(r.terminalUrl, state.baseUrl), "_blank"); } catch (e: any) { toast(e.message, true); }
   };
   const sshToggle = async (id: string, sp: string, enabled: boolean) => {
     try { await pcall("PUT", "core", "/jobenv/updateSsh/" + id, { jobenvId: Number(id), ssh: { enabled } }, sp); toast(enabled ? "已启用 SSH，稍候刷新详情" : "已禁用 SSH"); if (enabled) setTimeout(() => openDetail(id, sp), 1500); }

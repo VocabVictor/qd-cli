@@ -1,13 +1,13 @@
 import { useEffect, useState, useRef } from "react";
 import { ExternalLink, Loader2, Activity } from "lucide-react";
-import { api, qget } from "../lib/api";
+import { api, qget, localizeTerminalUrl } from "../lib/api";
 import { Drawer } from "./Drawer";
 import { Card, useToast } from "./ui";
 import { LineChart } from "./Chart";
 
 const COLORS: Record<string, string> = { gpu_util: "#7c5cfc", gpu_memory: "#b14eff", cpu: "#22c9a8", memory: "#f6a609" };
 
-export function Monitor({ job, onClose }: { job: { id: string; name?: string; space?: string; kind?: "job" | "dev" } | null; onClose: () => void }) {
+export function Monitor({ job, onClose, baseUrl }: { job: { id: string; name?: string; space?: string; kind?: "job" | "dev" } | null; onClose: () => void; baseUrl?: string }) {
   const toast = useToast();
   const [metrics, setMetrics] = useState<any[] | null>(null);
   const [termUrl, setTermUrl] = useState<string>("");
@@ -25,7 +25,7 @@ export function Monitor({ job, onClose }: { job: { id: string; name?: string; sp
     timer.current = setInterval(load, 5000);
     // 预取终端地址
     qget(`/api/terminal-url?kind=${job.kind || "job"}&id=${encodeURIComponent(job.id)}&instance=0${job.space ? "&space=" + job.space : ""}`)
-      .then((r) => setTermUrl(r.terminalUrl)).catch((e) => setTermErr(e.message));
+      .then((r) => setTermUrl(localizeTerminalUrl(r.terminalUrl, baseUrl))).catch((e) => setTermErr(e.message));
     return () => clearInterval(timer.current);
   }, [job]);
 
