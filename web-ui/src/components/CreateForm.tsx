@@ -1,12 +1,12 @@
 import { useEffect, useState, useMemo } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import { api, qpost, pcall, eachSpace, spacesOf, AppState, asList, field } from "../lib/api";
 import { Drawer } from "./Drawer";
 import { useToast } from "./ui";
 
 type Kind = "job" | "dev";
 
-export function CreateForm({ kind, state, open, onClose, onDone }: { kind: Kind; state: AppState; open: boolean; onClose: () => void; onDone: () => void }) {
+export function CreateForm({ kind, state, open, onClose, onDone, initial }: { kind: Kind; state: AppState; open: boolean; onClose: () => void; onDone: () => void; initial?: any }) {
   const toast = useToast();
   const spaces = spacesOf(state);
   const [space, setSpace] = useState(state.spaceId || spaces[0]?.id || "");
@@ -31,6 +31,36 @@ export function CreateForm({ kind, state, open, onClose, onDone }: { kind: Kind;
   const [jsonText, setJsonText] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadingOpts, setLoadingOpts] = useState(true);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [tplName, setTplName] = useState("");
+
+  // 载入模板列表
+  useEffect(() => {
+    if (!open) return;
+    api.templates().then((d) => setTemplates((d.templates || []).filter((t: any) => t.kind === kind))).catch(() => setTemplates([]));
+  }, [open, kind]);
+
+  // 用一份既有配置预填表单（复制作业 / 套用模板都走这里）
+  const applyPreset = (v: any) => {
+    if (!v) return;
+    const role = (v.taskroles && v.taskroles[0]) || {};
+    if (v.jobName || v.jobenvName) setName(String(v.jobName || v.jobenvName));
+    if (v.spaceId) setSpace(String(v.spaceId));
+    if (v.projectId) setProjectId(String(v.projectId));
+    if (v.rsgroupId) setRsgroupId(String(v.rsgroupId));
+    if (v.imageId !== undefined) setImageId(String(v.imageId));
+    if (v.maxRunHour) setMaxRunHour(Number(v.maxRunHour));
+    const spec = kind === "job" ? role : v;
+    if (spec.cpu) setCpu(Number(spec.cpu));
+    if (spec.memory) setMemory(Math.max(1, Math.round(Number(spec.memory) / 1024)));
+    if (spec.storage) setStorage(Math.max(1, Math.round(Number(spec.storage) / 1024)));
+    const g = Number(spec.gpu) || 0;
+    setUseGpu(g > 0);
+    if (g > 0) setGpu(g);
+    if (spec.gpuType) setGpuType(String(spec.gpuType));
+    if (role.runScript) setRunScript(String(role.runScript));
+  };
+  useEffect(() => { if (open && initial) applyPreset(initial); }, [open, initial]); // eslint-disable-line
 
   useEffect(() => {
     if (!open) return;
@@ -105,6 +135,38 @@ export function CreateForm({ kind, state, open, onClose, onDone }: { kind: Kind;
     <Drawer open={open} onClose={onClose} title={kind === "job" ? "提交作业" : "申请开发机"}>
       {loadingOpts ? <div className="flex items-center gap-2 text-ink-faint text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" />加载选项…</div> : (
         <>
+          <div className="flex items-center gap-2 flex-wrap pb-3 mb-3 border-b border-line">
+            <span className="text-aux text-ink-soft">模板</span>
+            <select className="field w-44" value="" onChange={(e) => {
+              const t = templates.find((x) => x.name === e.target.value);
+              if (t) { applyPreset(t.payload); toast("已套用模板：" + t.name); }
+            }}>
+              <option value="">{templates.length ? "选择模板套用…" : "还没有模板"}</option>
+              {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+            </select>
+            <input className="field w-40" placeholder="另存为模板名" value={tplName} onChange={(e) => setTplName(e.target.value)} />
+            <button className="btn btn-mini" onClick={async () => {
+              const n = tplName.trim();
+              if (!n) return toast("请先填模板名", true);
+              try { await api.saveTemplate(n, kind, payload); setTplName("");
+                const d = await api.templates(); setTemplates((d.templates || []).filter((t: any) => t.kind === kind));
+                toast("已保存模板：" + n); }
+              catch (e: any) { toast(e.message, true); }
+            }}><Save size={12} />保存</button>
+            {templates.length > 0 && (
+              <select className="field w-32" value="" onChange={async (e) => {
+                const n = e.target.value; if (!n) return;
+                try { await api.deleteTemplate(n);
+                  const d = await api.templates(); setTemplates((d.templates || []).filter((t: any) => t.kind === kind));
+                  toast("已删除模板：" + n); }
+                catch (err: any) { toast(err.message, true); }
+              }}>
+                <option value="">删除模板…</option>
+                {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            )}
+          </div>
+
           {!advanced ? (
             <div className="grid grid-cols-2 gap-x-4">
               <div><L>名称</L><input className="field" value={name} onChange={(e) => setName(e.target.value)} /></div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2, Plus, Activity, Terminal as TermIcon, Copy } from "lucide-react";
+import { RefreshCw, Loader2, Plus, Activity, Terminal as TermIcon, Copy, CopyPlus } from "lucide-react";
 import { api, AppState, pcall, spacesOf, fmtTime, field, asList } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { useList } from "../lib/table";
@@ -25,6 +25,7 @@ export function Jobs({ state }: { state: AppState }) {
   const [chip, setChip] = useState("running");
   const [mon, setMon] = useState<any>(null);
   const [create, setCreate] = useState(false);
+  const [preset, setPreset] = useState<any>(null);
   const [metrics, setMetrics] = useState<Record<string, any[]>>({});
 
   const { data: all, loading, refreshing, error, refresh } = useCached<any[]>(
@@ -58,6 +59,33 @@ export function Jobs({ state }: { state: AppState }) {
     try { const r = await api.bulk(action, [id], sp); const bad = r.find((x: any) => !x.ok);
       bad ? toast(bad.error, true) : toast("已" + (action.includes("cancel") ? "取消" : "删除") + " " + id); refresh(); }
     catch (e: any) { toast(e.message, true); }
+  };
+
+  // 复制作业：拉详情，还原成新建表单能吃的配置
+  const cloneJob = async (id: string, sp: string, name: string) => {
+    toast("正在读取作业配置…");
+    try {
+      const d = await api.job(id, sp);
+      const j = d?.data || d || {};
+      const role = (j.taskroleList || j.taskroles || [])[0] || {};
+      setPreset({
+        jobName: (name || "job") + "-copy",
+        spaceId: j.spaceId || sp,
+        projectId: String(field(j, ["projectId"], "")),
+        rsgroupId: String(field(j, ["rsgroupId"], "")),
+        imageId: field(j, ["imageId"], 0),
+        maxRunHour: Number(field(j, ["maxRunHour"], 24)) || 24,
+        taskroles: [{
+          runScript: field(role, ["runScript", "command"], ""),
+          cpu: Number(field(role, ["cpu"], 0)) || undefined,
+          memory: Number(field(role, ["memory"], 0)) || undefined,
+          storage: Number(field(role, ["storage"], 0)) || undefined,
+          gpu: Number(field(role, ["gpu", "gpuNumber"], 0)) || 0,
+          gpuType: field(role, ["gpuType", "gpuModel"], ""),
+        }],
+      });
+      setCreate(true);
+    } catch (e: any) { toast("读取配置失败：" + e.message, true); }
   };
 
   const q = cluster?.quota;
@@ -177,6 +205,7 @@ export function Jobs({ state }: { state: AppState }) {
                     <div className="shrink-0 flex flex-col gap-1.5">
                       {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job" })}><Activity size={12} />监控</button>}
                       {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job" })}><TermIcon size={12} />终端</button>}
+                      <button className="btn btn-mini" onClick={() => cloneJob(id, sp, String(field(j, ["jobName", "name"], "")))}><CopyPlus size={12} />复制</button>
                       <button className="btn btn-mini" onClick={() => act("job-cancel", id, sp)}>取消</button>
                       <button className="btn btn-mini btn-danger" onClick={() => act("job-delete", id, sp)}>删除</button>
                     </div>
@@ -219,7 +248,7 @@ export function Jobs({ state }: { state: AppState }) {
       </Rail>
 
       <Monitor job={mon} onClose={() => setMon(null)} baseUrl={state.baseUrl} />
-      <CreateForm kind="job" state={state} open={create} onClose={() => setCreate(false)} onDone={refresh} />
+      <CreateForm kind="job" state={state} open={create} initial={preset} onClose={() => { setCreate(false); setPreset(null); }} onDone={refresh} />
     </div>
   );
 }

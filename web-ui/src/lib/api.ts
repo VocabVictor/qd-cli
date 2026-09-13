@@ -40,6 +40,9 @@ export const api = {
   config: (key: string, value: string) => qpost("/api/config", { key, value }),
   keepalive: (action: string) => qpost("/api/keepalive", { action, minutes: 30 }),
   exec: (body: any) => qpost("/api/exec", body),
+  templates: () => qget("/api/templates"),
+  saveTemplate: (name: string, kind: "job" | "dev", payload: any) => qpost("/api/templates", { name, kind, payload }),
+  deleteTemplate: (name: string) => qfetch("/api/templates/" + encodeURIComponent(name), { method: "DELETE" }),
 };
 
 // helpers

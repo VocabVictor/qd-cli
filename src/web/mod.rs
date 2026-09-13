@@ -1,6 +1,7 @@
 mod proxy;
 mod routes_core;
 mod routes_jobs;
+mod routes_templates;
 mod routes_workloads;
 mod state;
 
@@ -54,6 +55,8 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
         .route("/api/idle", get(routes_workloads::get_idle))
         .route("/api/terminal-url", get(routes_workloads::get_terminal_url))
         .route("/api/exec", post(routes_workloads::post_exec))
+        .route("/api/templates", get(routes_templates::list_templates).post(routes_templates::post_template))
+        .route("/api/templates/{name}", axum::routing::delete(routes_templates::delete_template))
         // 终端反向代理：页面、静态资源与 WebSocket 均从本机同源提供
         .route("/terminal", get(proxy::proxy_http))
         .route("/static/{*path}", get(proxy::proxy_http))
