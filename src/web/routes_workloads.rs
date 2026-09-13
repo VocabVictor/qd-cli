@@ -107,7 +107,17 @@ pub(crate) async fn get_terminal_url(
         .api_for(query.get("space").map(String::as_str))
         .await?;
     let url = resolve_terminal_url(&api, &query).await?;
-    reply(json!({"terminalUrl": url}))
+    // 记录真实上游，并把地址换成 qd 自己的同源代理路径，
+    // 这样 iframe 不受自签证书与浏览器代理影响。
+    super::proxy::remember_upstream(&state, &url).await;
+    let local = reqwest::Url::parse(&url)
+        .ok()
+        .map(|parsed| match parsed.query() {
+            Some(query) => format!("{}?{}", parsed.path(), query),
+            None => parsed.path().to_owned(),
+        })
+        .unwrap_or(url);
+    reply(json!({"terminalUrl": local}))
 }
 
 /// 一次性远程命令：连平台网页终端执行并捕获输出（等价 job/dev exec）。

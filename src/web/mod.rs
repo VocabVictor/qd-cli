@@ -1,3 +1,4 @@
+mod proxy;
 mod routes_core;
 mod routes_jobs;
 mod routes_workloads;
@@ -53,6 +54,10 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
         .route("/api/idle", get(routes_workloads::get_idle))
         .route("/api/terminal-url", get(routes_workloads::get_terminal_url))
         .route("/api/exec", post(routes_workloads::post_exec))
+        // 终端反向代理：页面、静态资源与 WebSocket 均从本机同源提供
+        .route("/terminal", get(proxy::proxy_http))
+        .route("/static/{*path}", get(proxy::proxy_http))
+        .route("/ws/{*path}", get(proxy::proxy_ws))
         .layer(middleware::from_fn(state::origin_guard))
         .with_state(state);
 

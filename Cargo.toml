@@ -1,6 +1,6 @@
 [package]
 name = "qudongctl"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 description = "Low-memory, high-concurrency CLI for a GPU training platform"
 license = "MIT"
@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 futures-util = "0.3"
 native-tls = "0.2"

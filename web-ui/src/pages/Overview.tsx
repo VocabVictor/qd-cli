@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Loader2, Plus, Boxes, Upload, Terminal as TermIcon, ExternalLink } from "lucide-react";
-import { api, AppState, pcall, eachSpace, asList, field, qget, localizeTerminalUrl } from "../lib/api";
+import { api, AppState, pcall, eachSpace, asList, field, qget } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { Card, PageBar, Spinner, Table, Th, Td, Badge, useToast } from "../components/ui";
 import { Meter, Heatmap, Spark, Rail, RailCard, HeatNode } from "../components/viz";
@@ -73,7 +73,7 @@ export function Overview({ state }: { state: AppState }) {
 
   const openTerm = async (kind: "job" | "dev", id: string, sp: string) => {
     try { const r = await qget(`/api/terminal-url?kind=${kind}&id=${encodeURIComponent(id)}&instance=0${sp ? "&space=" + sp : ""}`);
-      window.open(localizeTerminalUrl(r.terminalUrl, state.baseUrl), "_blank"); }
+      window.open(r.terminalUrl, "_blank"); }
     catch (e: any) { toast(e.message, true); }
   };
 

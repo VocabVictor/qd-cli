@@ -17,6 +17,8 @@ pub(crate) struct WebState {
     pub(crate) api: tokio::sync::RwLock<Option<ApiClient>>,
     /// 用户可见空间列表缓存（登录/登出时清空）。
     pub(crate) spaces: tokio::sync::RwLock<Option<Vec<SpaceInfo>>>,
+    /// 终端上游 host:port，由 /api/terminal-url 解析时写入，供反向代理使用。
+    pub(crate) terminal_upstream: tokio::sync::RwLock<Option<String>>,
 }
 
 impl WebState {
@@ -26,6 +28,7 @@ impl WebState {
             config: tokio::sync::RwLock::new(config),
             api: tokio::sync::RwLock::new(api),
             spaces: tokio::sync::RwLock::new(None),
+            terminal_upstream: tokio::sync::RwLock::new(None),
         }
     }
 
