@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bin: qd.exe
+          - os: ubuntu-latest
+            bin: qd
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Build web UI
+        env:
+          NODE_OPTIONS: --no-deprecation
+        run: |
+          cd web-ui
+          npm ci --no-audit --no-fund
+          npm run build
+        shell: bash
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.92.0'
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --release
+      - run: cargo test --locked

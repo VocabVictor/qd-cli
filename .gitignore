@@ -1,0 +1,15 @@
+target/
+bin/
+.qctl/
+*.pdb
+node_modules/
+dist/
+*.log
+.env
+.env.*
+__pycache__/
+live/
+*.exe
+
+# generated web bundle (built by build.rs from web-ui)
+/src/web/index.html
