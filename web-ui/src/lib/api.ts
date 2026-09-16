@@ -54,7 +54,9 @@ export const fmtMiB = (m?: number) => {
 };
 export const fmtCpu = (c?: number) => {
   const n = Number(c) || 0;
-  return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  // 平台的 cpuRequest 是浮点累加值，直接 String() 会漏出 116.68499999999996 这种尾数
+  return String(Math.round(n * 100) / 100);
 };
 export const fmtTime = (t?: any) => {
   if (!t) return "-";

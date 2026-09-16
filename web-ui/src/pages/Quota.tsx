@@ -40,11 +40,17 @@ export function Quota({ state }: { state: AppState }) {
       {(data || []).map(({ sp, q }) => {
         if (!q) return <Card key={sp.id} className="p-4 mb-4 text-sm text-ink-faint">空间 {sp.name}：无配额信息或无权限</Card>;
         const gpuModels = q.gpuquotaDataList || [];
+        // 平台顶层的 gpuCardCnt/usedGpuCardCnt/leftGpuCardCnt 常年返回 0，
+        // 真实数字只在按型号拆分的 gpuquotaDataList 里，有明细就以明细汇总为准
+        const gpuSum = (key: string) => gpuModels.reduce((acc: number, g: any) => acc + (Number(g[key]) || 0), 0);
+        const gpu = gpuModels.length > 0
+          ? { total: gpuSum("cardCnt"), used: gpuSum("usedCardCnt"), left: gpuSum("leftCardCnt") }
+          : { total: Number(q.gpuCardCnt) || 0, used: Number(q.usedGpuCardCnt) || 0, left: Number(q.leftGpuCardCnt) || 0 };
         return (
           <div key={sp.id} className="mb-6">
             <div className="flex items-center gap-2 mb-3"><b className="text-sm">空间 {sp.name}</b><span className="text-xs text-ink-faint">{sp.id}</span></div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-              <QuotaCard label="GPU 卡" limitType={q.gpuLimitType} total={q.gpuCardCnt} used={q.usedGpuCardCnt} left={q.leftGpuCardCnt} fmt={(n) => String(n)} unit=" 卡" />
+              <QuotaCard label="GPU 卡" limitType={q.gpuLimitType} total={gpu.total} used={gpu.used} left={gpu.left} fmt={(n) => String(n)} unit=" 卡" />
               <QuotaCard label="CPU" limitType={q.cpuLimitType} total={q.cpu} used={q.usedCpu} left={q.leftCpu} fmt={cores} unit=" 核" />
               <QuotaCard label="内存" limitType={q.memoryLimitType} total={q.memory} used={q.usedMemory} left={q.leftMemory} fmt={fmtMiB} unit="" />
               <QuotaCard label="存储" limitType={q.storageLimitType} total={q.storage} used={q.usedStorage} left={q.leftStorage} fmt={fmtMiB} unit="" />

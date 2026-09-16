@@ -81,9 +81,9 @@ impl Config {
 
     fn normalize(&mut self) -> Result<()> {
         self.base_url = self.base_url.trim_end_matches('/').to_owned();
-        if !self.base_url.is_empty()
-            && !(self.base_url.starts_with("https://") || self.base_url.starts_with("http://"))
-        {
+        let has_scheme =
+            self.base_url.starts_with("https://") || self.base_url.starts_with("http://");
+        if !self.base_url.is_empty() && !has_scheme {
             bail!("base_url 必须以 http:// 或 https:// 开头");
         }
         if self.concurrency == 0 || self.concurrency > 1024 {

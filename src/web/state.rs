@@ -75,12 +75,14 @@ impl WebState {
                 }),
             Err(_) => None,
         };
-        let spaces = fetched.unwrap_or_else(|| {
-            vec![SpaceInfo {
+        // 取到了才缓存：隧道没通/接口抖动时兜底只用这一次，
+        // 否则一次失败就会把「只有默认空间」钉死到进程退出，跨空间凭空消失。
+        let Some(spaces) = fetched else {
+            return vec![SpaceInfo {
                 id: default_space.clone(),
                 name: default_space,
-            }]
-        });
+            }];
+        };
         *self.spaces.write().await = Some(spaces.clone());
         spaces
     }
@@ -183,7 +185,10 @@ pub(crate) async fn origin_guard(
         request.method(),
         &axum::http::Method::GET | &axum::http::Method::HEAD | &axum::http::Method::OPTIONS
     );
-    if !origin.is_some_and(is_local_origin) && !(origin.is_none() && read_only) {
+    let from_local_page = origin.is_some_and(is_local_origin);
+    // 无 Origin 头的读请求（curl、浏览器直接开页）放行，写请求一律要求本机页面
+    let anonymous_read = origin.is_none() && read_only;
+    if !from_local_page && !anonymous_read {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"ok": false, "error": "写操作必须来自本机 qd Web 页面"})),
