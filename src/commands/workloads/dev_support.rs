@@ -97,17 +97,20 @@ pub(crate) async fn list_scoped_dev_environments(api: &ApiClient, scope: &str) -
 /// - 一个项目只能有一台开发机，重复创建会报 120300
 /// - storage 单位是 MB，且开启开发者工具时不能小于 1 GB（否则报 100101）
 /// - CPU-only 开发机把 gpu 置 0 并选纯 CPU 资源组即可
+///
+/// 镜像与资源组随部署而异，这里只给占位符：用 `qd image list` 和
+/// `qd resource groups` 查出本部署的真实取值再填。
 pub(crate) fn dev_template(config: &Config) -> Value {
     json!({
         "projectId": "PROJECT_ID（用 qd project list 查，或 qd project create 新建）",
         "spaceId": config.space_id,
         "jobenvName": "",
         "description": "created by qd",
-        "imageId": 6,
+        "imageId": 0,
         "imageSource": 0,
         "imageType": 1,
-        "imageDesc": "pytorch:25.03-py3",
-        "imageRepositoryId": 1,
+        "imageDesc": "请用 qd image list 查询，填目标镜像的 imageDesc",
+        "imageRepositoryId": 0,
         "tools": [],
         "services": [],
         "ssh": {"enabled": true},
