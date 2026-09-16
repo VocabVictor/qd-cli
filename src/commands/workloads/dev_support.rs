@@ -92,3 +92,37 @@ pub(crate) async fn list_scoped_dev_environments(api: &ApiClient, scope: &str) -
         "data": {"listCount": dev_list.len(), "devList": dev_list, "scope": scope}
     }))
 }
+
+/// 开发机创建载荷骨架。字段与平台 `POST /jobenv/devJob/new` 对齐：
+/// - 一个项目只能有一台开发机，重复创建会报 120300
+/// - storage 单位是 MB，且开启开发者工具时不能小于 1 GB（否则报 100101）
+/// - CPU-only 开发机把 gpu 置 0 并选纯 CPU 资源组即可
+pub(crate) fn dev_template(config: &Config) -> Value {
+    json!({
+        "projectId": "PROJECT_ID（用 qd project list 查，或 qd project create 新建）",
+        "spaceId": config.space_id,
+        "jobenvName": "",
+        "description": "created by qd",
+        "imageId": 6,
+        "imageSource": 0,
+        "imageType": 1,
+        "imageDesc": "pytorch:25.03-py3",
+        "imageRepositoryId": 1,
+        "tools": [],
+        "services": [],
+        "ssh": {"enabled": true},
+        "maxRunHour": 48,
+        "customEnv": "",
+        "rsgroupId": "请用 qd resource groups 查询",
+        "cpu": 4,
+        "memory": 8192,
+        "storage": 20480,
+        "gpu": 0,
+        "vgpu": 0,
+        "vgpuRatio": 0,
+        "vgpuMemory": 0,
+        "gpuType": "",
+        "vgpuType": "",
+        "npuTemplate": ""
+    })
+}

@@ -40,6 +40,15 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
   qd dev terminal-info JOBENV_ID
   qd dev shell JOBENV_ID
   qd dev exec JOBENV_ID -- COMMAND [ARG...]
+  qd dev template
+
+  qd fs ls PATH [--long] [--all] [--dev ID|--job ID [--instance N]]
+  qd fs cat PATH [--lines N]
+  qd fs find PATH [--name PATTERN] [--max-depth N] [--limit N]
+  qd fs du PATH [--depth N]
+  qd fs stat PATH
+      在 pod 内列举/查看文件；不指定目标时自动选一个 RUNNING 的开发机，
+      没有则退回 RUNNING 的作业。
 
   qd resource groups [--page N] [--size N]
   qd resource group RSGROUP_ID [--full]
@@ -134,8 +143,18 @@ pub(crate) async fn run() -> Result<()> {
             }
         }
         "dev" => {
+            if args.peek() == Some("template") {
+                args.pop();
+                args.ensure_empty()?;
+                print_json(&dev_template(&config), compact)
+            } else {
+                let api = ApiClient::from_saved_session(config.clone())?;
+                dev_command(&api, &config, &mut args, compact).await
+            }
+        }
+        "fs" => {
             let api = ApiClient::from_saved_session(config.clone())?;
-            dev_command(&api, &config, &mut args, compact).await
+            fs_command(&api, &config, &mut args, compact).await
         }
         "resource" => {
             let api = ApiClient::from_saved_session(config.clone())?;

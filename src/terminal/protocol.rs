@@ -39,6 +39,18 @@ pub(crate) fn strip_terminal_control(value: &str) -> String {
                         break;
                     }
                 }
+            } else if chars.next_if_eq(&']').is_some() {
+                // OSC（如 ESC ] 0 ; 标题 BEL）以 BEL 或 ST(ESC \) 结束；
+                // 不吃掉它，终端标题就会混进命令输出里
+                while let Some(next) = chars.next() {
+                    if next == '\u{0007}' {
+                        break;
+                    }
+                    if next == '\u{1b}' {
+                        chars.next_if_eq(&'\\');
+                        break;
+                    }
+                }
             }
             continue;
         }

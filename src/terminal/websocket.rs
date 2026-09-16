@@ -170,14 +170,17 @@ pub(crate) async fn run_web_terminal_command(
     send_terminal_input(websocket, "stty -echo 2>/dev/null\r").await?;
     drain_terminal(websocket, Duration::from_millis(250)).await?;
     let nonce = rand::random::<u64>();
+    let begin = format!("__QD_BEGIN_{nonce}");
     let marker = format!("__QD_EXIT_{nonce}:");
     let command = remote_command
         .iter()
         .map(|argument| shell_quote(argument))
         .collect::<Vec<_>>()
         .join(" ");
+    // 起止双标记：命令回显与 shell 提示符都落在 BEGIN 之前，据此精确切掉。
+    // 回显里出现的是未展开的 %s，不会误命中带 nonce 的真标记。
     let wrapped = format!(
-        "{{ {command}; }}; __qd_ec=$?; printf '\\n__QD_EXIT_%s:%d\\n' '{nonce}' \"$__qd_ec\"; stty echo 2>/dev/null\r"
+        "printf '\\n__QD_BEGIN_%s\\n' '{nonce}'; {{ {command}; }}; __qd_ec=$?; printf '\\n__QD_EXIT_%s:%d\\n' '{nonce}' \"$__qd_ec\"; stty echo 2>/dev/null\r"
     );
     send_terminal_input(websocket, &wrapped).await?;
 
@@ -193,9 +196,11 @@ pub(crate) async fn run_web_terminal_command(
                     output.push_str(&chunk);
                     let cleaned = strip_terminal_control(&output);
                     if let Some(marker_index) = cleaned.find(&marker) {
-                        let visible = cleaned[..marker_index]
-                            .trim_matches(['\r', '\n', ' '])
-                            .to_owned();
+                        let body = match cleaned.find(&begin) {
+                            Some(start) => &cleaned[start + begin.len()..marker_index],
+                            None => &cleaned[..marker_index],
+                        };
+                        let visible = body.trim_matches(['\r', '\n', ' ']).to_owned();
                         let exit_text = &cleaned[marker_index + marker.len()..];
                         let exit_code = exit_text
                             .chars()
