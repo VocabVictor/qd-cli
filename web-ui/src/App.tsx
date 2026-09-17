@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
-import { Home, Rocket, Boxes, FolderKanban, Server, Package, Settings as Cog, LogOut, Zap, Gauge, Upload } from "lucide-react";
+import { Home, Rocket, Boxes, Server, Package, Settings as Cog, LogOut, Zap, Gauge, Upload } from "lucide-react";
 import { api, AppState } from "./lib/api";
 import { ToastHost, Spinner } from "./components/ui";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { Jobs } from "./pages/Jobs";
 import { Devs } from "./pages/Devs";
-import { Projects } from "./pages/Projects";
 import { Nodes } from "./pages/Nodes";
 import { Images } from "./pages/Images";
 import { SettingsPage } from "./pages/Settings";
@@ -18,7 +17,6 @@ const NAV = [
   { v: "overview", label: "概览", icon: Home },
   { v: "jobs", label: "作业", icon: Rocket },
   { v: "devs", label: "开发环境", icon: Boxes },
-  { v: "projects", label: "项目", icon: FolderKanban },
   { v: "nodes", label: "节点", icon: Server },
   { v: "quota", label: "配额", icon: Gauge },
   { v: "transfer", label: "传输", icon: Upload },
@@ -27,7 +25,7 @@ const NAV = [
 ];
 
 const PAGES: Record<string, (p: { state: AppState }) => JSX.Element> = {
-  overview: Overview, jobs: Jobs, devs: Devs, projects: Projects,
+  overview: Overview, jobs: Jobs, devs: Devs,
   nodes: Nodes, quota: Quota, transfer: Transfer, images: Images, settings: SettingsPage,
 };
 
