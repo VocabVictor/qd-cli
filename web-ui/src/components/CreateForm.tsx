@@ -5,13 +5,13 @@ import { Drawer } from "./Drawer";
 import { dropCache } from "../lib/cache";
 import { useToast } from "./ui";
 
-type Kind = "job" | "dev";
+type Kind = "job";
 
 export function CreateForm({ kind, state, open, onClose, onDone, initial }: { kind: Kind; state: AppState; open: boolean; onClose: () => void; onDone: () => void; initial?: any }) {
   const toast = useToast();
   const spaces = spacesOf(state);
   const [space, setSpace] = useState(state.spaceId || spaces[0]?.id || "");
-  const [name, setName] = useState(kind === "job" ? "qd-job" : "qd-dev");
+  const [name, setName] = useState("qd-job");
   const [projects, setProjects] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
@@ -20,7 +20,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
   const [rsgroupId, setRsgroupId] = useState("");
   const [repoId, setRepoId] = useState("");
   const [imageId, setImageId] = useState("");
-  const [useGpu, setUseGpu] = useState(kind === "job");
+  const [useGpu, setUseGpu] = useState(true);
   const [gpuType, setGpuType] = useState("");
   const [gpu, setGpu] = useState(1);
   const [cpu, setCpu] = useState(8);
@@ -51,14 +51,13 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
     if (v.rsgroupId) setRsgroupId(String(v.rsgroupId));
     if (v.imageId !== undefined) setImageId(String(v.imageId));
     if (v.maxRunHour) setMaxRunHour(Number(v.maxRunHour));
-    const spec = kind === "job" ? role : v;
-    if (spec.cpu) setCpu(Number(spec.cpu));
-    if (spec.memory) setMemory(Math.max(1, Math.round(Number(spec.memory) / 1024)));
-    if (spec.storage) setStorage(Math.max(1, Math.round(Number(spec.storage) / 1024)));
-    const g = Number(spec.gpu) || 0;
+    if (role.cpu) setCpu(Number(role.cpu));
+    if (role.memory) setMemory(Math.max(1, Math.round(Number(role.memory) / 1024)));
+    if (role.storage) setStorage(Math.max(1, Math.round(Number(role.storage) / 1024)));
+    const g = Number(role.gpu) || 0;
     setUseGpu(g > 0);
     if (g > 0) setGpu(g);
-    if (spec.gpuType) setGpuType(String(spec.gpuType));
+    if (role.gpuType) setGpuType(String(role.gpuType));
     if (role.runScript) setRunScript(String(role.runScript));
   };
   useEffect(() => { if (open && initial) applyPreset(initial); }, [open, initial]); // eslint-disable-line
@@ -102,16 +101,13 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
 
   const payload = useMemo(() => {
     const spec = { cpu, memory: memory * 1024, storage: storage * 1024, gpu: useGpu ? gpu : 0, gpuType: useGpu ? gpuType : "" };
-    if (kind === "job") {
-      return {
-        jobName: name, trainType: 1, spaceId: space, projectId, rsgroupId,
-        description: "submitted by qd web", imageId: Number(imageId) || 0, maxRunHour, maxRetryCount: 0,
-        datasetInData: [], preInData: { dataType: 0, dataPath: "", dataBucket: "" }, services: [],
-        taskroles: [{ instance: 1, runScript, customEnv: "", ...spec }],
-      };
-    }
-    return { jobenvName: name, spaceId: space, projectId, rsgroupId, imageId: Number(imageId) || 0, ...spec };
-  }, [kind, name, space, projectId, rsgroupId, imageId, useGpu, gpu, gpuType, cpu, memory, storage, runScript, maxRunHour]);
+    return {
+      jobName: name, trainType: 1, spaceId: space, projectId, rsgroupId,
+      description: "submitted by qd web", imageId: Number(imageId) || 0, maxRunHour, maxRetryCount: 0,
+      datasetInData: [], preInData: { dataType: 0, dataPath: "", dataBucket: "" }, services: [],
+      taskroles: [{ instance: 1, runScript, customEnv: "", ...spec }],
+    };
+  }, [name, space, projectId, rsgroupId, imageId, useGpu, gpu, gpuType, cpu, memory, storage, runScript, maxRunHour]);
 
   useEffect(() => { setJsonText(JSON.stringify(payload, null, 2)); }, [payload]);
 
@@ -123,10 +119,10 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
     if (!body.rsgroupId) return toast("请选择资源组", true);
     setBusy(true);
     try {
-      if (kind === "job") { const r = await qpost("/api/job/submit", body); toast("已提交作业：" + ((r.data?.jobId) || "成功")); }
-      else { await pcall("POST", "core", "/jobenv/devJob/new", body); toast("已创建开发机"); }
+      const r = await qpost("/api/job/submit", body);
+      toast("已提交作业：" + ((r.data?.jobId) || "成功"));
       // 列表缓存作废，避免新建的东西要手动点刷新才出现
-      dropCache(kind === "job" ? "jobs" : "devs");
+      dropCache("jobs");
       dropCache("overview");
       onDone(); onClose();
     } catch (e: any) { toast(e.message, true); }
@@ -136,7 +132,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
   const L = ({ children }: { children: any }) => <label className="block text-xs font-medium text-ink-soft mb-1 mt-3">{children}</label>;
 
   return (
-    <Drawer open={open} onClose={onClose} title={kind === "job" ? "提交作业" : "申请开发机"}>
+    <Drawer open={open} onClose={onClose} title="提交作业">
       {loadingOpts ? <div className="flex items-center gap-2 text-ink-faint text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" />加载选项…</div> : (
         <>
           <div className="flex items-center gap-2 flex-wrap pb-3 mb-3 border-b border-line">
@@ -190,8 +186,8 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
               <div><L>CPU（核）</L><input className="field" type="number" min={1} value={cpu} onChange={(e) => setCpu(Number(e.target.value))} /></div>
               <div><L>内存（GiB）</L><input className="field" type="number" min={1} value={memory} onChange={(e) => setMemory(Number(e.target.value))} /></div>
               <div><L>存储（GiB）</L><input className="field" type="number" min={1} value={storage} onChange={(e) => setStorage(Number(e.target.value))} /></div>
-              {kind === "job" && <div><L>最长运行（小时）</L><input className="field" type="number" min={1} value={maxRunHour} onChange={(e) => setMaxRunHour(Number(e.target.value))} /></div>}
-              {kind === "job" && <div className="col-span-2"><L>运行命令</L><input className="field" value={runScript} onChange={(e) => setRunScript(e.target.value)} /></div>}
+              {<div><L>最长运行（小时）</L><input className="field" type="number" min={1} value={maxRunHour} onChange={(e) => setMaxRunHour(Number(e.target.value))} /></div>}
+              {<div className="col-span-2"><L>运行命令</L><input className="field" value={runScript} onChange={(e) => setRunScript(e.target.value)} /></div>}
             </div>
           ) : (
             <><L>提交 JSON（可编辑）</L><textarea className="field font-mono text-xs" style={{ height: 360, resize: "vertical", paddingTop: 8 }} value={jsonText} onChange={(e) => setJsonText(e.target.value)} /></>
@@ -200,7 +196,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial }: { ki
             <label className="flex items-center gap-1.5 text-sm text-ink-soft cursor-pointer"><input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />高级 JSON</label>
             <div className="flex-1" />
             <button className="btn" onClick={onClose}>取消</button>
-            <button className="btn btn-pri" onClick={submit} disabled={busy}>{busy && <Loader2 size={14} className="animate-spin" />}{kind === "job" ? "提交作业" : "创建开发机"}</button>
+            <button className="btn btn-pri" onClick={submit} disabled={busy}>{busy && <Loader2 size={14} className="animate-spin" />}提交作业</button>
           </div>
         </>
       )}

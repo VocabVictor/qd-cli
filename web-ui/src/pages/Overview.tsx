@@ -12,7 +12,7 @@ const METRIC_COLOR: Record<string, string> = { gpu_util: "#1070FE", gpu_memory: 
 export function Overview({ state }: { state: AppState }) {
   const toast = useToast();
   const [mon, setMon] = useState<any>(null);
-  const [create, setCreate] = useState<null | "job" | "dev">(null);
+  const [create, setCreate] = useState<null | "job">(null);
   const [metrics, setMetrics] = useState<Record<string, any[]>>({});
   const [showCpuOnly, setShowCpuOnly] = useState(false);
 
@@ -159,9 +159,9 @@ export function Overview({ state }: { state: AppState }) {
               <span className="flex items-center gap-1.5"><Plus size={14} />提交训练作业</span>
               <span className="text-[11px] font-normal opacity-80">选镜像、资源，一键启动</span>
             </button>
-            <button className="btn btn-ok h-auto py-3 flex-col gap-1" onClick={() => setCreate("dev")}>
-              <span className="flex items-center gap-1.5"><Plus size={14} />创建开发机</span>
-              <span className="text-[11px] font-normal opacity-80">支持 VS Code 远程连接</span>
+            <button className="btn btn-ok h-auto py-3 flex-col gap-1" onClick={() => { location.hash = "devs"; }}>
+              <span className="flex items-center gap-1.5"><ExternalLink size={14} />开发机</span>
+              <span className="text-[11px] font-normal opacity-80">查看状态与 VS Code 连接</span>
             </button>
             <button className="btn h-auto py-2.5 flex-col gap-0.5" onClick={() => { location.hash = "transfer"; }}>
               <span className="flex items-center gap-1.5"><Upload size={13} />文件传输</span>
@@ -223,12 +223,12 @@ export function Overview({ state }: { state: AppState }) {
                     <div className="flex-1" />
                     {String(field(d, ["jobenvStatus"], "")).toUpperCase() === "RUNNING"
                       ? <button className="btn btn-mini" onClick={() => openTerm("dev", id, d.spaceId || "")}><ExternalLink size={11} />连接</button>
-                      : <button className="btn btn-mini" onClick={() => { location.hash = "devs"; }}>去启动</button>}
+                      : <button className="btn btn-mini" onClick={() => { location.hash = "devs"; }}>详情</button>}
                   </div>
                 </div>
               );
             })}
-          </div> : <p className="text-aux text-ink-faint">还没有开发机<button className="text-brand hover:underline ml-1" onClick={() => setCreate("dev")}>去创建</button></p>}
+          </div> : <p className="text-aux text-ink-faint">还没有开发机，用 qd dev create 申请</p>}
         </RailCard>
       </Rail>
 

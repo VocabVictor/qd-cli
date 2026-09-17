@@ -133,12 +133,9 @@ pub(crate) async fn post_bulk(
     let action = match body.get("action").and_then(Value::as_str) {
         Some("job-cancel") => BulkAction::JobCancel,
         Some("job-delete") => BulkAction::JobDelete,
-        Some("dev-start") => BulkAction::DevStart,
-        Some("dev-stop") => BulkAction::DevStop,
+        // 开发环境的启停只走 CLI（qd dev start/stop），网页端不提供写操作
         _ => {
-            return Err(WebError::bad_request(
-                "action 只接受 job-cancel/job-delete/dev-start/dev-stop",
-            ));
+            return Err(WebError::bad_request("action 只接受 job-cancel/job-delete"));
         }
     };
     let ids = body
