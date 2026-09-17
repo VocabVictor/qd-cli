@@ -224,9 +224,9 @@ export function Jobs({ state }: { state: AppState }) {
 
       <Rail>
         <RailCard title="快速创建">
-          <p className="text-aux text-ink-faint mb-3">选镜像与资源规格，一键提交训练作业或申请开发机。</p>
+          <p className="text-aux text-ink-faint mb-3">选镜像与资源规格，一键提交训练作业。开发机的申请与启停只在 CLI 做。</p>
           <button className="btn btn-pri w-full mb-2" onClick={() => setCreate(true)}><Plus size={14} />新建作业</button>
-          <button className="btn w-full" onClick={() => { location.hash = "devs"; }}>去申请开发机</button>
+          <button className="btn w-full" onClick={() => { location.hash = "devs"; }}>查看开发机</button>
         </RailCard>
         <RailCard title="常用工具">
           <div className="grid grid-cols-2 gap-2">
