@@ -50,11 +50,17 @@ apt-get install -y --no-install-recommends ca-certificates || true
 patch_tzdata
 dpkg --configure -a
 
-# 默认源是 archive.ubuntu.com，实测 apt-get update 要 77s，清华镜像 4s。
-# 设 USE_CN_MIRROR=0 可以保留官方源。
+# ------------------------------------------------------------- chsrc
+# 换源不再写死某一家。实测同一天里各镜像站差距很大：cargo 那项清华
+# 11.28 MB/s、北外 88.72 MB/s，差 8 倍；apt 用清华时 update 要 111s，
+# 换北外后 2s。所以交给 chsrc 现场测速挑最快的。
+# chsrc 本身也留在镜像里，之后随时可以 chsrc set <目标> 重新测。
 if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
-  log "切换 apt 源到清华镜像"
-  sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g'     /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+  log "安装 chsrc 并按测速切换系统源"
+  curl -sSL https://chsrc.run/posix -o /tmp/chsrc-install.sh
+  bash /tmp/chsrc-install.sh -d /usr/local/bin
+  rm -f /tmp/chsrc-install.sh
+  chsrc set ubuntu
 fi
 
 log "apt-get update"
@@ -94,11 +100,16 @@ apt-get install -y nodejs
 # 这是官方 rust docker 镜像的做法。
 log "安装 Rust (minimal + clippy + rustfmt)"
 export RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
-# static.rust-lang.org 跨境很慢（实测单这一步就要好几分钟）。走清华镜像。
-if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
-  export RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
-  export RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+# static.rust-lang.org 跨境极慢（实测 12 KB/s，清华 6.7 MB/s，差 500 倍）。
+# chsrc set rustup 会测速并把 RUSTUP_DIST_SERVER 写进 ~/.bashrc / ~/.zshrc，
+# 但那两个文件本次构建的 shell 不会去读（Ubuntu 的 .bashrc 开头就对非交互
+# shell return），所以这里把值抓出来 export 一次给当前构建用。
+if [ "${USE_CN_MIRROR:-1}" = "1" ] && command -v chsrc >/dev/null; then
+  chsrc set rustup || true
+  _rs=$(grep -hoE 'RUSTUP_DIST_SERVER="[^"]+"' /root/.bashrc 2>/dev/null | tail -1 | cut -d'"' -f2)
+  [ -n "$_rs" ] && export RUSTUP_DIST_SERVER="$_rs" RUSTUP_UPDATE_ROOT="$_rs/rustup"
 fi
+
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
   | sh -s -- -y --no-modify-path --profile minimal \
       --default-toolchain stable -c clippy -c rustfmt
@@ -108,18 +119,6 @@ export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
 export PATH="$CARGO_HOME/bin:$PATH"
 EOF
-# cargo 拉 crates 默认走 crates.io，同样跨境慢
-if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
-  cat > "$CARGO_HOME/config.toml" <<'EOF'
-[source.crates-io]
-replace-with = "tuna"
-
-[source.tuna]
-registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
-EOF
-fi
-chmod 0644 /etc/profile.d/rust.sh
-
 # ------------------------------------------------------------------ uv
 # 用官方独立安装脚本，不用 pip：Ubuntu 24.04 有 PEP 668 保护，
 # pip install 需要 --break-system-packages，会污染系统 Python。
@@ -136,32 +135,24 @@ apt-get install -y --no-install-recommends locales
 locale-gen en_US.UTF-8 zh_CN.UTF-8
 update-locale LANG=en_US.UTF-8 LC_ALL=
 
-# ------------------------------------------------------- pip / uv 镜像
-# apt/npm/cargo/rustup 都换了国内源，pip 也得换，否则会重演 rustup 那个
-# 12 KB/s 的惨案。uv 下载 Python 解释器走的是 GitHub release，另有变量。
-if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
-  log "配置 pip / uv 镜像"
-  cat > /etc/pip.conf <<'PIPEOF'
-[global]
-index-url = https://pypi.tuna.tsinghua.edu.cn/simple
-trusted-host = pypi.tuna.tsinghua.edu.cn
-PIPEOF
-  cat > /etc/profile.d/mirrors.sh <<'MIREOF'
-export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
-export UV_PYTHON_INSTALL_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/github-release/astral-sh/python-build-standalone/
-MIREOF
-  chmod 0644 /etc/profile.d/mirrors.sh
-fi
-
 # ------------------------------------------------------------------ zsh
 # 注意这一段必须排在"清理 apt 缓存"之前：那一步会 rm -rf
 # /var/lib/apt/lists/*，之后再 apt install 会报 Unable to locate package。
 log "安装 zsh 并设为默认 shell"
 apt-get install -y --no-install-recommends   zsh zsh-autosuggestions zsh-syntax-highlighting
 
-# zshenv 对所有 zsh 会话生效（登录/非登录/交互/非交互），
-# /etc/profile.d/rust.sh 只在登录 shell 里被 source，不够用。
-cat > /etc/zsh/zshenv <<'EOF'
+# zshenv 对所有 zsh 会话生效（登录/非登录/交互/非交互）。SSH 里
+# `ssh host cmd` 这种非登录非交互调用只读 zshenv，不读 /etc/profile.d，
+# 所以 rust 的 PATH 必须放这里。
+#
+# 用追加而不是覆盖：/etc/zsh/zshenv 是 zsh-common 包的 conffile，整个
+# 覆盖会丢掉发行版设的默认 PATH 等内容，包升级时 dpkg 还会来问冲突。
+# 平台自己也是往这个文件末尾追加 source /etc/profile.d/gemini.sh。
+# 加个标记避免重复运行时叠加多份。
+if ! grep -q 'dev-image.sh: BEGIN' /etc/zsh/zshenv 2>/dev/null; then
+  cat >> /etc/zsh/zshenv <<'ZSHENVEOF'
+
+# --- dev-image.sh: BEGIN ---
 export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
 case ":$PATH:" in
@@ -169,9 +160,9 @@ case ":$PATH:" in
   *) export PATH="$CARGO_HOME/bin:$PATH" ;;
 esac
 export LANG=en_US.UTF-8
-export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
-export UV_PYTHON_INSTALL_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/github-release/astral-sh/python-build-standalone/
-EOF
+# --- dev-image.sh: END ---
+ZSHENVEOF
+fi
 
 # 必须给 root 准备 .zshrc：否则首次启动 zsh 会弹 zsh-newuser-install
 # 配置向导，非交互会话（比如脚本、VS Code 的远程 shell）会卡在那里。
@@ -207,6 +198,18 @@ npm install -g @anthropic-ai/claude-code @openai/codex
 # 另存为是把整个容器复刻成镜像，所以构建过程留下的任何东西都会被烤进去。
 # 实测不清理的话有 300 MB 垃圾：npm 缓存 253 MB、apt lists 51 MB，外加
 # 一堆构建脚本、日志和 shell 历史。
+# --------------------------------------------------- 各工具链换源（测速）
+# 放在最后：chsrc 会写 ~/.zshrc、~/.bashrc、~/.config/uv/uv.toml 等文件，
+# 必须等这些文件都由本脚本创建完毕之后再跑，否则会被后面的 cat > 覆盖掉。
+# rustup 前面已经设过一次（构建时要用），这里再设一次是为了让它落进最终
+# 的 .zshrc。
+if [ "${USE_CN_MIRROR:-1}" = "1" ] && command -v chsrc >/dev/null; then
+  log "按测速切换各工具链的源"
+  for dish in pip uv npm cargo rustup; do
+    chsrc set "$dish" || echo "  (跳过 $dish)"
+  done
+fi
+
 log "清理构建痕迹"
 # 包管理器缓存
 npm cache clean --force 2>/dev/null || true
@@ -214,7 +217,8 @@ apt-get clean
 rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
 rm -rf /usr/local/rustup/downloads/* /usr/local/rustup/tmp/*
 # 跑过 claude/codex/uv 留下的临时物（配置目录下次启动会重建）
-rm -rf /root/.codex/tmp /root/.zcompdump /root/.config/uv
+# 注意别删 /root/.config/uv：chsrc 把 uv 的镜像配置写在 uv.toml 里
+rm -rf /root/.codex/tmp /root/.zcompdump /root/.config/uv/*.bak
 # 平台在容器启动时写的 SSH 状态标记，下次启动会重写，别带进镜像
 rm -f /root/.ssh/error
 # shell 历史里全是构建过程的命令
