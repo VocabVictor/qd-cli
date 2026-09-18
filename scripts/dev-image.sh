@@ -13,19 +13,62 @@ export DEBIAN_FRONTEND=noninteractive
 
 log() { echo "[$(date +%H:%M:%S)] == $* =="; }
 
+# ------------------------------------------------------- tzdata 的坑
+# 平台把 /etc/localtime 作为 bind mount 挂进容器（让容器时区跟节点一致）。
+# tzdata 的 postinst 要把新时区 "mv -f" 覆盖到 /etc/localtime，而 rename
+# 覆盖一个挂载点必然失败：
+#   mv: cannot move '/etc/localtime.dpkg-new' to '/etc/localtime':
+#       Device or resource busy
+# 一失败就连坐：libpython3.12-stdlib -> python3.12 -> python3 ->
+# python3-pip/venv 全部配置不了。
+#
+# 注意 dpkg 的 path-exclude 在这里没用——动手的是包自己的 postinst 脚本，
+# 不是 dpkg 解包。所以直接把那句 mv 改成删掉临时文件：宿主机的
+# /etc/localtime 本来就是我们想要的时区，不需要动它。
+#
+# 只有用国内镜像源时才会踩到：官方源给的 tzdata 与基础镜像同版本，不触发
+# 升级；清华源有 noble-updates 里更新的 tzdata，会触发。
+patch_tzdata() {
+  local f=/var/lib/dpkg/info/tzdata.postinst
+  [ -f "$f" ] || return 0
+  # 只替换 mv 那一段，不用反向引用： 经过多层转义容易被写成字面的
+  # 0x01 字节，结果命令名变成 "rm"，报 "rm: not found"（exit 127）。
+  # 换成 shell 内建 : ，既不依赖外部命令，缩进也原样保留。
+  sed -i 's|mv -f "$DPKG_ROOT/etc/localtime.dpkg-new" "$DPKG_ROOT/etc/localtime"|:|' "$f"
+  # 修掉上一版补丁可能留下的损坏行
+  sed -i 's|^.rm -f "$DPKG_ROOT/etc/localtime.dpkg-new"$|:|' "$f"
+}
+
 # ---------------------------------------------------------------- apt 源
-# 默认源是 archive.ubuntu.com，实测 apt-get update 要 77s。换清华镜像后
-# 明显更快。设 USE_CN_MIRROR=0 可以保留官方源。
+# 顺序很重要：裸 ubuntu:24.04 里没有 ca-certificates，没有根证书就校验
+# 不了 TLS。所以必须先用默认的 http 源把 ca-certificates 装上，之后才
+# 能把源换成 https 的清华镜像——反过来做会死锁，apt 连不上任何源，表现
+# 为所有包都 "Unable to locate package"。
+log "先用默认源装 ca-certificates（换 https 源的前提）"
+apt-get update -qq
+apt-get install -y --no-install-recommends ca-certificates || true
+patch_tzdata
+dpkg --configure -a
+
+# 默认源是 archive.ubuntu.com，实测 apt-get update 要 77s，清华镜像 4s。
+# 设 USE_CN_MIRROR=0 可以保留官方源。
 if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
   log "切换 apt 源到清华镜像"
-  sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' \
-    /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+  sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g'     /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
 fi
 
 log "apt-get update"
 apt-get update -qq
 
 # ------------------------------------------------------------ 系统工具
+# tzdata 必须单独先来一轮：patch_tzdata 要改的是 postinst 文件，而这个文件
+# 要等包解包之后才存在。所以先让 apt 解包它（postinst 会失败，忽略），补丁
+# 打上去，再 dpkg --configure -a 把它配置好。顺序反了补丁就是空操作。
+log "先处理 tzdata（解包 -> 打补丁 -> 配置）"
+apt-get install -y --no-install-recommends tzdata || true
+patch_tzdata
+dpkg --configure -a
+
 log "安装系统工具"
 apt-get install -y --no-install-recommends \
   ca-certificates curl wget gnupg \
@@ -50,6 +93,11 @@ apt-get install -y nodejs
 # 这是官方 rust docker 镜像的做法。
 log "安装 Rust (minimal + clippy + rustfmt)"
 export RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
+# static.rust-lang.org 跨境很慢（实测单这一步就要好几分钟）。走清华镜像。
+if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
+  export RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+  export RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+fi
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
   | sh -s -- -y --no-modify-path --profile minimal \
       --default-toolchain stable -c clippy -c rustfmt
@@ -59,6 +107,16 @@ export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
 export PATH="$CARGO_HOME/bin:$PATH"
 EOF
+# cargo 拉 crates 默认走 crates.io，同样跨境慢
+if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
+  cat > "$CARGO_HOME/config.toml" <<'EOF'
+[source.crates-io]
+replace-with = "tuna"
+
+[source.tuna]
+registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+EOF
+fi
 chmod 0644 /etc/profile.d/rust.sh
 
 # ------------------------------------------------------------------ uv
@@ -66,6 +124,15 @@ chmod 0644 /etc/profile.d/rust.sh
 # pip install 需要 --break-system-packages，会污染系统 Python。
 log "安装 uv"
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# ------------------------------------------------------------ AI CLI
+# claude / codex 都由 npm 分发，包里带的是各平台原生二进制（不是 node
+# 脚本包装），所以装完 /usr/bin/claude 和 /usr/bin/codex 直接可执行。
+log "安装 Claude Code 与 Codex"
+if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
+  npm config set registry https://registry.npmmirror.com
+fi
+npm install -g @anthropic-ai/claude-code @openai/codex
 
 # ---------------------------------------------------------------- 收尾
 log "清理 apt 缓存"
