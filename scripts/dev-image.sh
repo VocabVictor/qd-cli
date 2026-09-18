@@ -204,8 +204,22 @@ fi
 npm install -g @anthropic-ai/claude-code @openai/codex
 
 # ---------------------------------------------------------------- 收尾
-log "清理 apt 缓存"
+# 另存为是把整个容器复刻成镜像，所以构建过程留下的任何东西都会被烤进去。
+# 实测不清理的话有 300 MB 垃圾：npm 缓存 253 MB、apt lists 51 MB，外加
+# 一堆构建脚本、日志和 shell 历史。
+log "清理构建痕迹"
+# 包管理器缓存
+npm cache clean --force 2>/dev/null || true
 apt-get clean
-rm -rf /var/lib/apt/lists/*
+rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
+rm -rf /usr/local/rustup/downloads/* /usr/local/rustup/tmp/*
+# 跑过 claude/codex/uv 留下的临时物（配置目录下次启动会重建）
+rm -rf /root/.codex/tmp /root/.zcompdump /root/.config/uv
+# 平台在容器启动时写的 SSH 状态标记，下次启动会重写，别带进镜像
+rm -f /root/.ssh/error
+# shell 历史里全是构建过程的命令
+rm -f /root/.bash_history /root/.zsh_history
+# 日志清零而不是删除，保留文件本身与权限
+find /var/log -type f -exec truncate -s 0 {} + 2>/dev/null || true
 
 log "完成"
