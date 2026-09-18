@@ -37,9 +37,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Check tag matches Cargo.toml version
+        shell: bash
+        run: |
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          tag=${GITHUB_REF_NAME#v}
+          echo "Cargo.toml version=$ver  tag=$tag"
+          [ "$ver" = "$tag" ] || { echo "tag v$tag != Cargo.toml version $ver"; exit 1; }
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
       - name: Build web UI
         env:
           NODE_OPTIONS: --no-deprecation
@@ -53,13 +62,6 @@ jobs:
           toolchain: '1.92.0'
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Check tag matches Cargo.toml version
-        shell: bash
-        run: |
-          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
-          tag=${GITHUB_REF_NAME#v}
-          echo "Cargo.toml version=$ver  tag=$tag"
-          [ "$ver" = "$tag" ] || { echo "tag v$tag != Cargo.toml version $ver"; exit 1; }
       - run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Package
         shell: bash

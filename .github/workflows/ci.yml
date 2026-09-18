@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches: ['**']
+    tags-ignore: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -24,6 +26,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
       - name: Build web UI
         env:
           NODE_OPTIONS: --no-deprecation
@@ -38,3 +42,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release
       - run: cargo test --locked
+        if: matrix.os == 'ubuntu-latest'
