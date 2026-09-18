@@ -74,8 +74,9 @@ apt-get install -y --no-install-recommends \
   ca-certificates curl wget gnupg \
   git git-lfs openssh-server \
   tmux htop tree rsync unzip zip less bc jq \
-  iproute2 net-tools dnsutils lsof \
-  python3 python3-pip python3-venv \
+  iproute2 net-tools dnsutils lsof iputils-ping netcat-openbsd psmisc \
+  vim nano ncdu \
+  python3 python3-pip python3-venv ipython3 \
   build-essential pkg-config libssl-dev
 
 log "安装排查工具"
@@ -125,6 +126,33 @@ chmod 0644 /etc/profile.d/rust.sh
 log "安装 uv"
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+# --------------------------------------------------------------- locale
+# 裸 ubuntu 只有 C / C.utf8 / POSIX，LANG 是空的，结果 /gfs 里的中文文件名
+# 全部显示成八进制转义（实测 测试文件.txt -> ''$'æµ...'）。
+# LANG 用 en_US.UTF-8 而不是 zh_CN.UTF-8：报错信息保持英文好搜，同时
+# UTF-8 保证中文正常显示，两全。
+log "生成 locale"
+apt-get install -y --no-install-recommends locales
+locale-gen en_US.UTF-8 zh_CN.UTF-8
+update-locale LANG=en_US.UTF-8 LC_ALL=
+
+# ------------------------------------------------------- pip / uv 镜像
+# apt/npm/cargo/rustup 都换了国内源，pip 也得换，否则会重演 rustup 那个
+# 12 KB/s 的惨案。uv 下载 Python 解释器走的是 GitHub release，另有变量。
+if [ "${USE_CN_MIRROR:-1}" = "1" ]; then
+  log "配置 pip / uv 镜像"
+  cat > /etc/pip.conf <<'PIPEOF'
+[global]
+index-url = https://pypi.tuna.tsinghua.edu.cn/simple
+trusted-host = pypi.tuna.tsinghua.edu.cn
+PIPEOF
+  cat > /etc/profile.d/mirrors.sh <<'MIREOF'
+export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+export UV_PYTHON_INSTALL_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/github-release/astral-sh/python-build-standalone/
+MIREOF
+  chmod 0644 /etc/profile.d/mirrors.sh
+fi
+
 # ------------------------------------------------------------------ zsh
 # 注意这一段必须排在"清理 apt 缓存"之前：那一步会 rm -rf
 # /var/lib/apt/lists/*，之后再 apt install 会报 Unable to locate package。
@@ -140,6 +168,9 @@ case ":$PATH:" in
   *":$CARGO_HOME/bin:"*) ;;
   *) export PATH="$CARGO_HOME/bin:$PATH" ;;
 esac
+export LANG=en_US.UTF-8
+export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+export UV_PYTHON_INSTALL_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/github-release/astral-sh/python-build-standalone/
 EOF
 
 # 必须给 root 准备 .zshrc：否则首次启动 zsh 会弹 zsh-newuser-install
