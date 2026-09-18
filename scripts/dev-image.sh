@@ -114,6 +114,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
   | sh -s -- -y --no-modify-path --profile minimal \
       --default-toolchain stable -c clippy -c rustfmt
 chmod -R a+rX "$RUSTUP_HOME" "$CARGO_HOME"
+# 把 rust 的命令软链进 /usr/local/bin。
+#
+# 为什么不能只靠 PATH：平台在容器启动时往 /etc/zsh/zshenv 末尾追加
+# `source /etc/profile.d/gemini.sh`，而那个文件第 340 行是
+#   export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+# 硬性覆盖。它排在我们的块之后，所以任何往 PATH 里追加的写法都会被抹掉，
+# 表现为 SSH 进去 rustc: command not found（CARGO_HOME 却还在）。
+# /usr/local/bin 在平台写死的 PATH 里，软链过去就绕开了这个问题。
+for _f in "$CARGO_HOME"/bin/*; do
+  [ -e "$_f" ] && ln -sf "$_f" "/usr/local/bin/$(basename "$_f")"
+done
+
 cat > /etc/profile.d/rust.sh <<'EOF'
 export RUSTUP_HOME=/usr/local/rustup
 export CARGO_HOME=/usr/local/cargo
