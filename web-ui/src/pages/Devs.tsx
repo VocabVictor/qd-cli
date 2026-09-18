@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
-import { api, AppState, pcall, qget, field, spacesOf } from "../lib/api";
+import { AppState, pcall, qget, field, spacesOf } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { useList } from "../lib/table";
 import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, useToast } from "../components/ui";
@@ -12,9 +12,17 @@ export function Devs({ state }: { state: AppState }) {
   const spaces = spacesOf(state);
   const [scope, setScope] = useState("mine");
   const [detail, setDetail] = useState<any>(null);
-  const { data: list, loading, refreshing, error, refresh } = useCached<any[]>(
-    `devs:${scope}`, async () => { const d = await api.devs(scope); return (d.data?.devList) || []; }, [scope]
+  const [showAll, setShowAll] = useState(false);
+  const { data: res, loading, refreshing, error, refresh } = useCached<any>(
+    `devs:${scope}:${showAll}`,
+    async () => {
+      const d = await qget(`/api/devs?scope=${scope}${showAll ? "&all=1" : ""}`);
+      return { list: d.data?.devList || [], hidden: d.data?.hiddenCount || 0 };
+    },
+    [scope, showAll]
   );
+  const list = res?.list as any[] | undefined;
+  const hidden = res?.hidden || 0;
 
   const statuses = useMemo(() => [...new Set((list || []).map((d) => String(field(d, ["jobenvStatus"], ""))))].filter(Boolean), [list]);
   const { view, search, setSearch, filters, setFilter, sortKey, sortDir, toggleSort } = useList(list || [], {
@@ -35,6 +43,10 @@ export function Devs({ state }: { state: AppState }) {
     <>
       <PageBar title="开发环境" right={
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-aux text-ink-soft cursor-pointer select-none">
+            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+            显示全部项目
+          </label>
           <select className="field w-28" value={scope} onChange={(e) => setScope(e.target.value)}>{["mine", "shared", "public", "all"].map((s) => <option key={s}>{s}</option>)}</select>
           <button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>
         </div>} />
@@ -51,6 +63,11 @@ export function Devs({ state }: { state: AppState }) {
         )}
       </Toolbar>
       {error && !list && <Card className="p-4 text-sm mb-4">加载失败：{error}</Card>}
+      {!showAll && hidden > 0 && (
+        <p className="text-aux text-ink-faint mb-3">
+          已隐藏 {hidden} 台不属于同名项目的开发机（约定：每个空间只用与空间同名的那个项目）。勾选「显示全部项目」可查看。
+        </p>
+      )}
       {loading ? <Spinner /> :
         <Table head={<>
           <SortTh sortKey="project" active={sortKey === "project"} dir={sortDir} onSort={toggleSort}>项目</SortTh>

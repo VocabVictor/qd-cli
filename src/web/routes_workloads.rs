@@ -13,7 +13,15 @@ pub(crate) async fn list_devs(
     Query(query): Query<HashMap<String, String>>,
 ) -> WebResult {
     let scope = query_scope(&query)?;
+    // 约定：每个空间只有一台"正式"开发机，它所在的项目与空间同名。
+    // 控制台只展示这一台，其余（历史遗留项目、别人建的实验环境）一律隐藏，
+    // 免得列表里混进一堆用不上的东西。用 ?all=1 可以看全部。
+    let show_all = matches!(
+        query.get("all").map(String::as_str),
+        Some("1" | "true" | "yes")
+    );
     let mut devs = Vec::new();
+    let mut hidden = 0usize;
     let mut failed_spaces = Vec::new();
     for space in state.spaces().await {
         let api = state.api_for(Some(&space.id)).await?;
@@ -21,6 +29,10 @@ pub(crate) async fn list_devs(
             Ok(response) => {
                 for mut dev in response_array(&response, &["/data/devList"]).to_vec() {
                     attach_space(&mut dev, &space);
+                    if !show_all && !project_matches_space(&dev, &space) {
+                        hidden += 1;
+                        continue;
+                    }
                     devs.push(dev);
                 }
             }
@@ -29,7 +41,13 @@ pub(crate) async fn list_devs(
     }
     reply(json!({
         "code": 0,
-        "data": {"listCount": devs.len(), "devList": devs, "scope": scope, "failedSpaces": failed_spaces}
+        "data": {
+            "listCount": devs.len(),
+            "devList": devs,
+            "scope": scope,
+            "hiddenCount": hidden,
+            "failedSpaces": failed_spaces
+        }
     }))
 }
 
@@ -164,4 +182,12 @@ pub(crate) async fn post_exec(
     })??;
     let (output, exit_code) = outcome;
     reply(json!({"output": output, "exitCode": exit_code}))
+}
+
+/// 开发机所属项目是否与空间同名（大小写与首尾空白不敏感）。
+fn project_matches_space(dev: &Value, space: &SpaceInfo) -> bool {
+    dev.get("projectName")
+        .and_then(Value::as_str)
+        .map(|name| name.trim().eq_ignore_ascii_case(space.name.trim()))
+        .unwrap_or(false)
 }
