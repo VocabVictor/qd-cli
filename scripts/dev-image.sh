@@ -125,6 +125,44 @@ chmod 0644 /etc/profile.d/rust.sh
 log "安装 uv"
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+# ------------------------------------------------------------------ zsh
+# 注意这一段必须排在"清理 apt 缓存"之前：那一步会 rm -rf
+# /var/lib/apt/lists/*，之后再 apt install 会报 Unable to locate package。
+log "安装 zsh 并设为默认 shell"
+apt-get install -y --no-install-recommends   zsh zsh-autosuggestions zsh-syntax-highlighting
+
+# zshenv 对所有 zsh 会话生效（登录/非登录/交互/非交互），
+# /etc/profile.d/rust.sh 只在登录 shell 里被 source，不够用。
+cat > /etc/zsh/zshenv <<'EOF'
+export RUSTUP_HOME=/usr/local/rustup
+export CARGO_HOME=/usr/local/cargo
+case ":$PATH:" in
+  *":$CARGO_HOME/bin:"*) ;;
+  *) export PATH="$CARGO_HOME/bin:$PATH" ;;
+esac
+EOF
+
+# 必须给 root 准备 .zshrc：否则首次启动 zsh 会弹 zsh-newuser-install
+# 配置向导，非交互会话（比如脚本、VS Code 的远程 shell）会卡在那里。
+cat > /root/.zshrc <<'EOF'
+HISTFILE=~/.zsh_history
+HISTSIZE=10000
+SAVEHIST=10000
+setopt SHARE_HISTORY HIST_IGNORE_DUPS HIST_IGNORE_SPACE
+setopt AUTO_CD INTERACTIVE_COMMENTS
+autoload -Uz compinit && compinit -u
+zstyle ':completion:*' menu select
+autoload -Uz colors && colors
+PROMPT='%F{cyan}%n@%m%f:%F{yellow}%~%f %# '
+[ -f /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ] &&   . /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+[ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ] &&   . /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+alias ll='ls -alF'
+EOF
+
+# 装成功了才切默认 shell。先 chsh 再 apt 的话，万一 apt 失败，root 的
+# shell 就指向一个不存在的二进制，SSH 直接登不进来。
+command -v zsh >/dev/null && chsh -s "$(command -v zsh)" root
+
 # ------------------------------------------------------------ AI CLI
 # claude / codex 都由 npm 分发，包里带的是各平台原生二进制（不是 node
 # 脚本包装），所以装完 /usr/bin/claude 和 /usr/bin/codex 直接可执行。
