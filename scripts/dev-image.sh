@@ -176,9 +176,13 @@ fi
 
 log "清理构建痕迹"
 # 包管理器缓存
+# 顺序：先 npm cache clean（它会重建 /root/.npm）再删目录
 npm cache clean --force 2>/dev/null || true
 apt-get clean
 rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
+# chsrc 换源时留下的备份（含 .bak.~1~ 这种编号备份）
+rm -f /root/*.bak /root/.*.bak /root/.*.bak.~*~ /root/*~ /root/.*~
+rm -f /etc/apt/sources.list.d/*.bak
 rm -rf /usr/local/rustup/downloads/* /usr/local/rustup/tmp/*
 # claude/codex 的临时物
 # 别删整个 /root/.config/uv：chsrc 的镜像配置在 uv.toml 里
