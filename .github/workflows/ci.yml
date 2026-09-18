@@ -23,6 +23,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Exclude build dirs from Defender (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Windows runner 默认开着实时扫描，编译写出的每个 .rlib/.obj 都会被扫。
+          # 失败不影响构建，所以整体吞掉异常。
+          try {
+            Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE","$env:USERPROFILE\.cargo" -ErrorAction Stop
+            Write-Host "Defender exclusions added"
+          } catch {
+            Write-Host "Skipped: $($_.Exception.Message)"
+          }
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
