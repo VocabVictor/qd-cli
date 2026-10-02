@@ -77,6 +77,12 @@ pub(crate) fn redact_sensitive_fields(value: &mut Value) {
                     || normalized.contains("secret")
                     || normalized.contains("cookie")
                     || normalized.contains("authorization")
+                    || (normalized == "proxy"
+                        && value.as_str().is_some_and(|url| {
+                            reqwest::Url::parse(url).is_ok_and(|url| {
+                                !url.username().is_empty() || url.password().is_some()
+                            })
+                        }))
                     || matches!(
                         normalized.as_str(),
                         "terminalurl" | "jupyterurl" | "sshconnection"

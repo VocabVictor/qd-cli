@@ -11,6 +11,7 @@ pub struct Config {
     pub connect_timeout_secs: u64,
     pub request_timeout_secs: u64,
     pub insecure_tls: bool,
+    pub proxy: Option<String>,
 }
 
 impl Default for Config {
@@ -22,6 +23,7 @@ impl Default for Config {
             connect_timeout_secs: 5,
             request_timeout_secs: 30,
             insecure_tls: false,
+            proxy: None,
         }
     }
 }
@@ -73,6 +75,7 @@ impl Config {
             "insecure-tls" | "insecure_tls" => {
                 self.insecure_tls = parse_bool(value)?;
             }
+            "proxy" => self.set_proxy(value)?,
             _ => bail!("未知配置项: {key}"),
         }
         self.normalize()?;
@@ -89,6 +92,20 @@ impl Config {
         if self.concurrency == 0 || self.concurrency > 1024 {
             bail!("concurrency 必须在 1..=1024 范围内");
         }
+        if let Some(proxy) = self.proxy.clone() {
+            self.set_proxy(&proxy)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_proxy(&mut self, value: &str) -> Result<()> {
+        let value = value.trim();
+        self.proxy = if value.is_empty() || value.eq_ignore_ascii_case("none") {
+            None
+        } else {
+            reqwest::Proxy::all(value).map_err(|_| anyhow::anyhow!("代理地址无效"))?;
+            Some(value.to_owned())
+        };
         Ok(())
     }
 

@@ -68,6 +68,7 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
 全局选项（可放在任意位置）:
   --base-url URL       临时覆盖平台地址
   --space-id ID        临时覆盖工作空间 ID
+  --proxy URL          显式使用代理；none 为直连（默认忽略系统和环境代理）
   --concurrency N      临时覆盖并发数（默认 32）
   --secure-tls         校验证书
   --insecure-tls       忽略证书错误（当前内网部署默认）
@@ -99,6 +100,9 @@ pub(crate) async fn run() -> Result<()> {
     }
     if let Some(value) = args.take_option("--space-id")? {
         config.space_id = Some(value);
+    }
+    if let Some(value) = args.take_option("--proxy")? {
+        config.set_proxy(&value)?;
     }
     if let Some(value) = args.take_option("--concurrency")? {
         config.concurrency = parse_usize("concurrency", &value, 1, 1024)?;

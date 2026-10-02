@@ -49,6 +49,8 @@ qd config set space-id 工作空间ID
 qd config set concurrency 64
 ```
 
+QD 默认直连，忽略系统代理及 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`（含小写形式）。需要代理时显式使用 `qd --proxy http://127.0.0.1:1080 …`，或运行 `qd config set proxy http://127.0.0.1:1080`。命令行优先于配置；`--proxy none` 可临时直连，`qd config set proxy none` 可清除配置代理。
+
 ## Slurm 风格操作
 
 对应关系：

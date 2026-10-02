@@ -48,11 +48,13 @@ pub(crate) async fn proxy_http(State(state): State<Arc<WebState>>, uri: Uri) -> 
         .unwrap_or("/");
     let target = format!("https://{authority}{path_and_query}");
 
-    let insecure = state.config().await.insecure_tls;
-    let client = match reqwest::Client::builder()
-        .danger_accept_invalid_certs(insecure)
-        .build()
-    {
+    let config = state.config().await;
+    let client = match crate::api::http_client_builder(&config).and_then(|builder| {
+        builder
+            .danger_accept_invalid_certs(config.insecure_tls)
+            .build()
+            .map_err(Into::into)
+    }) {
         Ok(client) => client,
         Err(err) => return deny(&format!("构建代理客户端失败: {err}")),
     };

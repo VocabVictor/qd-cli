@@ -46,7 +46,7 @@ pub(crate) fn string_field(value: &Value, key: &str) -> Result<String> {
 
 pub(crate) fn build_http_client(config: &Config) -> Result<Client> {
     config.require_base_url()?;
-    Client::builder()
+    http_client_builder(config)?
         .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
         .timeout(Duration::from_secs(config.request_timeout_secs))
         .pool_idle_timeout(Duration::from_secs(60))
@@ -56,6 +56,16 @@ pub(crate) fn build_http_client(config: &Config) -> Result<Client> {
         .user_agent(concat!("qd/", env!("CARGO_PKG_VERSION")))
         .build()
         .context("创建 HTTP 客户端失败")
+}
+
+pub(crate) fn http_client_builder(config: &Config) -> Result<reqwest::ClientBuilder> {
+    // Never inherit shell or OS proxies. Only explicit CLI/config proxies apply.
+    let mut builder = Client::builder().no_proxy();
+    if let Some(url) = &config.proxy {
+        let proxy = reqwest::Proxy::all(url).map_err(|_| anyhow!("代理地址无效"))?;
+        builder = builder.proxy(proxy);
+    }
+    Ok(builder)
 }
 
 pub(crate) async fn backoff(attempt: u32) {
