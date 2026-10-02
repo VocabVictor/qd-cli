@@ -1,6 +1,10 @@
 use super::*;
 
 impl ApiClient {
+    pub(crate) fn space_id(&self) -> Option<&str> {
+        self.config.space_id.as_deref()
+    }
+
     pub fn insecure_tls(&self) -> bool {
         self.config.insecure_tls
     }

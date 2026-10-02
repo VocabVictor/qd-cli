@@ -99,6 +99,12 @@ pub(super) fn handle_request(
         let body: Value = serde_json::from_slice(&request_body).unwrap();
         assert_eq!(body["projectId"], "integration-project");
         assert_eq!(body["jobName"], "integration-job");
+        let space_header = request
+            .headers()
+            .iter()
+            .find(|header| header.field.equiv("spaceid"))
+            .map(|header| header.value.as_str());
+        assert_eq!(space_header, body["spaceId"].as_str());
         (
             200,
             "application/json",

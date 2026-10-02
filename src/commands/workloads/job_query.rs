@@ -7,6 +7,14 @@ pub(crate) async fn submit_job(api: &ApiClient, config: &Config, mut body: Value
         "spaceId",
         config.space_id.clone().map(Value::String),
     )?;
+    if let Some(space_id) = scalar_string(&body, "spaceId")
+        && api.space_id() != Some(space_id.as_str())
+    {
+        bail!(
+            "空间不一致：任务 JSON 的 spaceId={space_id}，实际请求空间={}；未提交任务。请加 --space-id {space_id}，或修改任务 JSON 的 spaceId 使两者一致",
+            api.space_id().unwrap_or("未设置")
+        );
+    }
     let project_id = scalar_string(&body, "projectId");
     let job_name = scalar_string(&body, "jobName");
     let submitted_at = unix_millis();
