@@ -86,7 +86,7 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
 
 /// 从 HELP 摘出某命令组的段落（按空行分块，块内任一行以 `qd <command>` 起始）；
 /// 没有对应段落时返回空串，由调用方回退到完整帮助。
-fn help_section(command: &str) -> String {
+pub(crate) fn help_section(command: &str) -> String {
     let prefix = format!("qd {command} ");
     let bare = format!("qd {command}");
     HELP.split("
