@@ -45,6 +45,14 @@ fn ids_reject_path_injection() {
 }
 
 #[test]
+fn description_rejects_platform_forbidden_characters() {
+    assert!(validate_description("vllm 0.30.0 mtp3 serve 8xH800 lossless").is_ok());
+    assert!(validate_description("推理(假期)任务").is_err());
+    assert!(validate_description("ratio: 0.82").is_err());
+    assert!(validate_description("ratio：0.82").is_err());
+}
+
+#[test]
 fn sensitive_fields_are_redacted_recursively() {
     let mut value = json!({
         "data": {

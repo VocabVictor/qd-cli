@@ -2,6 +2,9 @@ use crate::*;
 
 /// 提交任务：补 spaceId、POST /job/new、必要时回查 jobId 并塞回 data.jobId。
 pub(crate) async fn submit_job(api: &ApiClient, config: &Config, mut body: Value) -> Result<Value> {
+    if let Some(description) = body.get("description").and_then(Value::as_str) {
+        validate_description(description)?;
+    }
     insert_if_missing(
         &mut body,
         "spaceId",

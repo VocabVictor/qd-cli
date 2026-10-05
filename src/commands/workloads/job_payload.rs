@@ -94,3 +94,21 @@ pub(crate) fn attach_job_id(result: &mut Value, id: &str) -> Result<()> {
         .insert("jobId".to_owned(), Value::String(id.to_owned()));
     Ok(())
 }
+
+/// 平台对 description 做字符校验，括号与冒号（含全角）会被拒
+/// （100101 任务备注不合法）。提交前拦截并提示可用的分隔写法，
+/// 避免作业在服务端才失败。
+pub(crate) fn validate_description(description: &str) -> Result<()> {
+    let rejected: String = description
+        .chars()
+        .filter(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | ':' | '：' | '（' | '）'))
+        .collect();
+    if rejected.is_empty() {
+        Ok(())
+    } else {
+        bail!(
+            "description 含平台不允许的字符: {rejected}\n\
+             平台会报 100101（任务备注不合法）；请改用空格、连字符或点号分隔。"
+        )
+    }
+}
