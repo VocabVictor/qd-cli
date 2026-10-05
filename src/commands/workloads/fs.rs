@@ -1,23 +1,20 @@
 use crate::*;
 
-/// 远端路径必须是绝对 Unix 路径。Git Bash/MSYS 会把 `/gfs` 改写成
-/// `C:/Program Files/Git/gfs`，命令到了 pod 里必然找不到，且报错完全不指向真因。
-fn check_remote_path(path: &str) -> Result<()> {
-    let mangled = path.len() >= 2
-        && path.as_bytes()[0].is_ascii_alphabetic()
-        && path.as_bytes()[1] == b':';
-    if mangled {
+/// 远端路径必须是绝对 Unix 路径。Git Bash/MSYS 会把 `/gfs`、`/tmp` 改写成
+/// 本地 Windows 路径；远端路径永远不可能是本地 Windows 路径，常见的改写形态
+/// （安装根前缀、%TEMP% 挂载）已由 un_mangle_remote_path 确定性还原，
+/// 这里只拦截剩余的无法识别形态。
+fn check_remote_path(path: &str) -> Result<String> {
+    let path = un_mangle_remote_path(path);
+    if !path.starts_with('/') {
         bail!(
-            "远端路径被本地 shell 改写成了 Windows 路径: {path}\n\
-             Git Bash/MSYS 会转换以 / 开头的参数。请先执行:\n\
+            "远端路径必须是绝对路径（以 / 开头），收到: {path}\n\
+             如果这是 Git Bash/MSYS 改写的结果（自定义挂载），请先执行:\n\
              export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'\n\
              或改用 PowerShell 运行同一条命令。"
         );
     }
-    if !path.starts_with('/') {
-        bail!("远端路径必须是绝对路径（以 / 开头），收到: {path}");
-    }
-    Ok(())
+    Ok(path)
 }
 
 /// 执行目标：优先显式指定，否则自动挑一个 RUNNING 的开发机，再退回 RUNNING 的作业。
@@ -87,8 +84,7 @@ pub(crate) async fn fs_command(
 ) -> Result<()> {
     let sub = args.pop().context("用法: qd fs ls|cat|find|du|stat PATH")?;
     let target = resolve_target(api, config, args).await?;
-    let path = args.pop().context("缺少 PATH")?;
-    check_remote_path(&path)?;
+    let path = check_remote_path(&args.pop().context("缺少 PATH")?)?;
     let quoted = shell_quote(&path);
 
     let script = match sub.as_str() {

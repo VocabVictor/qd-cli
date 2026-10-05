@@ -213,3 +213,70 @@ fn node_resource_filters_reject_conflicting_sort_direction() {
     let mut args = Args::new(["--asc", "--desc"].into_iter().map(str::to_owned));
     assert!(node_resource_query(&mut args).is_err());
 }
+
+#[test]
+fn msys_root_is_derived_from_converted_path_entries() {
+    assert_eq!(
+        msys_root_from_entries([
+            "C:\\Users\\lenovo\\.local\\bin".to_owned(),
+            "E:\\Git\\mingw64\\bin".to_owned(),
+            "E:\\Git\\usr\\bin".to_owned(),
+        ]),
+        Some("E:\\Git".to_owned())
+    );
+    assert_eq!(
+        msys_root_from_entries([
+            "C:\\Program Files\\Git\\usr\\bin".to_owned(),
+            "C:\\Windows\\system32".to_owned(),
+        ]),
+        Some("C:\\Program Files\\Git".to_owned())
+    );
+    // 没有 MSYS 特征目录（Linux 原生 PATH、PowerShell 直启）时探测不到
+    assert_eq!(
+        msys_root_from_entries(["C:\\Windows\\system32".to_owned(), "/usr/bin".to_owned()]),
+        None
+    );
+}
+
+#[test]
+fn remote_paths_mangled_by_git_bash_are_restored() {
+    // Git Bash 把 /job/detail/1 改写成 "<安装根>/job/detail/1"，剥根还原
+    assert_eq!(
+        un_mangle_remote_path_with("E:/Git/job/detail/1", Some("E:\\Git")),
+        "/job/detail/1"
+    );
+    assert_eq!(
+        un_mangle_remote_path_with("E:/Git/gfs/user/private", Some("E:\\Git")),
+        "/gfs/user/private"
+    );
+    // 大小写不敏感，安装根带空格或尾斜杠也可以
+    assert_eq!(
+        un_mangle_remote_path_with("c:/program files/git/space/list", Some("C:\\Program Files\\Git\\")),
+        "/space/list"
+    );
+    // // 是 MSYS 约定的免转换写法，收敛成单斜杠
+    assert_eq!(un_mangle_remote_path_with("//job/detail/1", None), "/job/detail/1");
+    // 正常写法、同前缀非路径边界、无关的本地路径都不动（交由调用方校验报错）
+    assert_eq!(un_mangle_remote_path_with("/job/detail/1", Some("E:\\Git")), "/job/detail/1");
+    assert_eq!(un_mangle_remote_path_with("E:/Github/x", Some("E:\\Git")), "E:/Github/x");
+    assert_eq!(
+        un_mangle_remote_path_with("C:/Windows/system32", Some("E:\\Git")),
+        "C:/Windows/system32"
+    );
+    // 探测不到安装根时保持原样
+    assert_eq!(un_mangle_remote_path_with("E:/Git/job/list", None), "E:/Git/job/list");
+}
+
+#[test]
+fn tmp_mounted_to_local_temp_is_mapped_back() {
+    let temp = std::env::var("TEMP")
+        .or_else(|_| std::env::var("TMP"))
+        .unwrap()
+        .replace('\\', "/");
+    let temp = temp.trim_end_matches('/');
+    assert_eq!(
+        un_mangle_remote_path_with(&format!("{temp}/glm53-local/verify.py"), Some("E:\\Git")),
+        "/tmp/glm53-local/verify.py"
+    );
+    assert_eq!(un_mangle_remote_path_with(temp, Some("E:\\Git")), "/tmp");
+}

@@ -134,7 +134,11 @@ pub(crate) async fn job_command(
         Some("exec") => {
             let id = required_id(args, "JOB_ID")?;
             let instance = option_u64(args, "--instance", 0, 0, 64)? as usize;
-            let mut command = args.drain();
+            let mut command: Vec<String> = args
+                .drain()
+                .into_iter()
+                .map(|arg| un_mangle_remote_path(&arg))
+                .collect();
             if command.first().map(String::as_str) == Some("--") {
                 command.remove(0);
             }

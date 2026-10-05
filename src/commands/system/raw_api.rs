@@ -7,7 +7,10 @@ pub(crate) async fn raw_api_command(api: &ApiClient, args: &mut Args, compact: b
         .to_ascii_uppercase()
         .parse()
         .context("无效 HTTP 方法")?;
-    let path = args.pop().context("api 缺少 PATH")?;
+    let mut path = un_mangle_remote_path(&args.pop().context("api 缺少 PATH")?);
+    if !path.starts_with('/') {
+        path.insert(0, '/');
+    }
     let service = Service::parse(
         &args
             .take_option("--service")?

@@ -251,7 +251,11 @@ pub(crate) async fn dev_command(
         }
         Some("exec") => {
             let id = required_id(args, "JOBENV_ID")?;
-            let mut command = args.drain();
+            let mut command: Vec<String> = args
+                .drain()
+                .into_iter()
+                .map(|arg| un_mangle_remote_path(&arg))
+                .collect();
             if command.first().map(String::as_str) == Some("--") {
                 command.remove(0);
             }
