@@ -3,6 +3,7 @@ use crate::*;
 pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令行客户端
 
 用法:
+  选项可放在任意位置；`--` 之后的参数原样传给远端命令。
   qd login --username USER [--password-stdin] [--ldap] [--no-remember]
   qd logout
   qd whoami

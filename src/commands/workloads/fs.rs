@@ -1,15 +1,15 @@
 use crate::*;
 
 /// 远端路径必须是绝对 Unix 路径。Git Bash/MSYS 会把 `/gfs`、`/tmp` 改写成
-/// 本地 Windows 路径；远端路径永远不可能是本地 Windows 路径，常见的改写形态
-/// （安装根前缀、%TEMP% 挂载）已由 un_mangle_remote_path 确定性还原，
-/// 这里只拦截剩余的无法识别形态。
+/// 本地 Windows 路径；远端路径永远不可能是本地 Windows 路径，可确定性识别的
+/// 改写形态已按 MSYS 挂载表逆变换还原（见 cli::msys），这里只拦截剩余的
+/// 无法识别形态。
 fn check_remote_path(path: &str) -> Result<String> {
     let path = un_mangle_remote_path(path);
     if !path.starts_with('/') {
         bail!(
             "远端路径必须是绝对路径（以 / 开头），收到: {path}\n\
-             如果这是 Git Bash/MSYS 改写的结果（自定义挂载），请先执行:\n\
+             如果这是 Git Bash/MSYS 对自定义挂载的改写，请先执行:\n\
              export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'\n\
              或改用 PowerShell 运行同一条命令。"
         );
