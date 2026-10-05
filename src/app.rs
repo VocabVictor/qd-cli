@@ -74,6 +74,7 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
   --secure-tls         校验证书
   --insecure-tls       忽略证书错误（当前内网部署默认）
   --compact            输出单行 JSON
+  --verbose            在 stderr 打印每个请求的方法、URL、状态与耗时
   --full               show/group 输出平台完整响应；默认只输出低 Token 摘要
   -h, --help           显示帮助
   -V, --version        显示版本
@@ -96,6 +97,9 @@ pub(crate) async fn run() -> Result<()> {
 
     let compact = args.take_flag("--compact");
     let mut config = Config::load()?;
+    if args.take_flag("--verbose") {
+        config.verbose = true;
+    }
     if let Some(value) = args.take_option("--base-url")? {
         config.base_url = value.trim_end_matches('/').to_owned();
     }

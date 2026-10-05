@@ -1,5 +1,7 @@
 use super::*;
 
+use std::time::Instant;
+
 impl ApiClient {
     pub(crate) fn space_id(&self) -> Option<&str> {
         self.config.space_id.as_deref()
@@ -158,6 +160,12 @@ impl ApiClient {
         let mut attempt = 0u32;
         let mut refreshed = false;
         loop {
+            if self.config.verbose && attempt == 0 {
+                eprintln!("--> {method} {url}");
+            } else if self.config.verbose {
+                eprintln!("--> {method} {url} (重试 {attempt})");
+            }
+            let started = Instant::now();
             let token = self.session.lock().await.access_token.clone();
             let mut request = self
                 .http
@@ -185,6 +193,9 @@ impl ApiClient {
                 Err(error) => return Err(error).context("平台 API 请求失败"),
             };
             let status = response.status();
+            if self.config.verbose {
+                eprintln!("<-- {status} ({} ms)", started.elapsed().as_millis());
+            }
 
             if status == StatusCode::UNAUTHORIZED && !refreshed {
                 self.refresh_if_needed(&token).await?;

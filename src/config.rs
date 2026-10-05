@@ -12,6 +12,9 @@ pub struct Config {
     pub request_timeout_secs: u64,
     pub insecure_tls: bool,
     pub proxy: Option<String>,
+    /// 会话级调试开关（--verbose），不持久化。
+    #[serde(skip)]
+    pub verbose: bool,
 }
 
 impl Default for Config {
@@ -24,6 +27,7 @@ impl Default for Config {
             request_timeout_secs: 30,
             insecure_tls: false,
             proxy: None,
+            verbose: false,
         }
     }
 }

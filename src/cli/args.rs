@@ -121,7 +121,7 @@ const FLAG_OPTIONS: &[&str] = &[
     "--all", "--asc", "--available-only", "--compact", "--desc", "--disable", "--enable",
     "--full", "--gpu-only", "--help", "--insecure-tls", "--jobs", "--ldap", "--long",
     "--no-remember", "--open", "--password-stdin", "--quiet", "--secure-tls", "--version",
-    "--wait", "-h", "-V",
+    "--wait", "--verbose", "-h", "-V",
 ];
 
 fn is_option_token(token: &str) -> bool {
