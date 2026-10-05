@@ -40,6 +40,8 @@ fn ids_reject_path_injection() {
     assert!(validate_id("1234567890", "JOB_ID").is_ok());
     assert!(validate_id("../admin", "JOB_ID").is_err());
     assert!(validate_id("1?x=2", "JOB_ID").is_err());
+    // 拼错的选项落在 ID 位置时,报“选项形态”而不是“非法字符”
+    assert!(validate_id("--ful", "JOB_ID").is_err());
 }
 
 #[test]

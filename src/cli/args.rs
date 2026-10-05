@@ -85,6 +85,12 @@ pub(crate) fn remaining_ids(args: &mut Args, label: &str) -> Result<Vec<String>>
 }
 
 pub(crate) fn validate_id(value: &str, label: &str) -> Result<()> {
+    if value.len() > 1 && value.starts_with('-') {
+        bail!(
+            "{label} 位置收到选项形态的 token: {value}\n\
+             可能是选项名拼写错误（未知选项不会被解析），或该参数应写在 -- 之后。"
+        );
+    }
     if value.is_empty()
         || !value
             .chars()
