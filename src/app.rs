@@ -84,14 +84,39 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
   Token 和凭据不会出现在命令行、可读配置或输出中。
 "#;
 
+/// 从 HELP 摘出某命令组的段落（按空行分块，块内任一行以 `qd <command>` 起始）；
+/// 没有对应段落时返回空串，由调用方回退到完整帮助。
+fn help_section(command: &str) -> String {
+    let prefix = format!("qd {command} ");
+    let bare = format!("qd {command}");
+    HELP.split("
+
+")
+        .filter(|block| {
+            block.lines().any(|line| {
+                let trimmed = line.trim_start();
+                trimmed.starts_with(&prefix) || trimmed == bare
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("
+
+")
+}
+
 pub(crate) async fn run() -> Result<()> {
     let mut args = Args::new(env::args().skip(1));
-    if args.is_empty() || args.take_flag_any(&["-h", "--help"]) {
-        print!("{HELP}");
-        return Ok(());
-    }
     if args.take_flag_any(&["-V", "--version"]) {
         println!("qd {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    let Some(command) = args.pop() else {
+        print!("{HELP}");
+        return Ok(());
+    };
+    if args.take_flag_any(&["-h", "--help"]) {
+        let section = help_section(&command);
+        print!("{}", if section.is_empty() { HELP } else { &section });
         return Ok(());
     }
 
@@ -119,7 +144,6 @@ pub(crate) async fn run() -> Result<()> {
         config.insecure_tls = true;
     }
 
-    let command = args.pop().context("缺少命令")?;
     match command.as_str() {
         "login" => login(&config, &mut args, compact).await,
         "logout" => logout(compact),

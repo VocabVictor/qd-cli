@@ -273,3 +273,12 @@ fn undeclared_option_tokens_stay_inline() {
         vec!["bash", "-lc", "x", "--strange-remote-flag"]
     );
 }
+
+#[test]
+fn help_section_extracts_command_group() {
+    let job = help_section("job");
+    assert!(job.contains("qd job exec"));
+    assert!(!job.contains("qd dev exec"));
+    // 未知命令没有对应段落,由调用方回退到完整帮助
+    assert!(help_section("no-such-command").is_empty());
+}
