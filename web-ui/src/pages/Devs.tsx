@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
-import { AppState, pcall, qget, field, spacesOf } from "../lib/api";
+import { AppState, pcall, qget, field, spacesOf, isAdmin } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { useList } from "../lib/table";
 import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, useToast } from "../components/ui";
@@ -86,7 +86,7 @@ export function Devs({ state }: { state: AppState }) {
                 <Td><Badge text={field(d, ["jobenvStatus"], "-")} /></Td>
                 <Td clip>{field(d, ["ownerDisplayName", "createDisplayName"])}</Td>
                 <Td className="whitespace-nowrap">
-                  <button className="btn btn-mini mr-1" onClick={() => term(id, sp)}><ExternalLink size={12} />终端</button>
+                  <button className="btn btn-mini mr-1" disabled={!isAdmin()} title={isAdmin() ? undefined : "开发机终端只对管理员开放"} onClick={() => term(id, sp)}><ExternalLink size={12} />终端</button>
                   <button className="btn btn-mini" onClick={() => openDetail(id, sp)}>详情</button>
                 </Td>
               </tr>

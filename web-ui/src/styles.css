@@ -11,35 +11,62 @@ body {
   font-family: theme(fontFamily.sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
 }
+::selection { background: theme(colors.brand.100); }
+* { scrollbar-width: thin; scrollbar-color: #D4D4D8 transparent; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 @layer components {
+  /* 内容面：白底 + 1px 细线，不加阴影 */
   .card { @apply bg-surface border border-line rounded-card; }
   .card-pad { @apply p-5; }
+  .panel-head { @apply flex items-center gap-2 h-11 px-4 border-b border-line; }
 
-  .btn { @apply inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-ctl text-[13px] font-medium
-                border border-line bg-white text-ink hover:bg-canvas transition-colors cursor-pointer
-                disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap; }
-  .btn-pri { @apply border-transparent text-white bg-brand hover:bg-brand-600; }
-  .btn-ok  { @apply border-transparent text-white bg-ok hover:brightness-95; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-ctl text-[13px] font-medium
+                border border-line bg-white text-ink hover:bg-hover transition-colors cursor-pointer
+                disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap select-none
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-1; }
+  .btn-pri { @apply border-brand text-white bg-brand hover:bg-brand-600 hover:border-brand-600; }
+  .btn-ok  { @apply border-ok text-white bg-ok hover:brightness-95; }
   .btn-mini { @apply h-7 px-2.5 text-[12px]; }
-  .btn-danger { @apply text-danger border-danger/25 hover:bg-danger-50; }
+  .btn-danger { @apply text-danger hover:bg-danger-50; }
+  .btn-ghost { @apply border-transparent bg-transparent hover:bg-hover; }
 
-  .chip { @apply inline-flex items-center h-8 px-3 rounded-ctl text-[13px] border border-line bg-white
-                 text-ink-soft hover:bg-canvas cursor-pointer transition-colors; }
-  .chip-on { @apply bg-brand-50 border-brand/30 text-brand font-medium; }
+  /* 筛选项：Linear 式扁平标签，选中仅换底色 */
+  .chip { @apply inline-flex items-center h-7 px-2.5 rounded-ctl text-[12px] text-ink-soft
+                 hover:bg-hover hover:text-ink cursor-pointer transition-colors select-none; }
+  .chip-on { @apply bg-selected text-ink font-medium hover:bg-selected; }
 
-  .field { @apply w-full h-9 px-3 rounded-ctl border border-line bg-white text-[13px] outline-none
-                  focus:border-brand focus:ring-2 focus:ring-brand-50; }
+  .segmented { @apply flex p-0.5 rounded-ctl bg-hover border border-line; }
+  .segmented > button { @apply flex-1 h-7 rounded-[5px] text-[13px] text-ink-soft transition-colors; }
+  .segmented > button[aria-pressed="true"] { @apply bg-white text-ink font-medium border border-line; }
 
-  .tag { @apply inline-flex items-center h-6 px-2 rounded-ctl text-[12px] font-medium; }
+  .field { @apply w-full h-8 px-2.5 rounded-ctl border border-line bg-white text-[13px] outline-none transition-colors
+                  placeholder:text-ink-faint hover:border-[#D4D4D8]
+                  focus:border-brand focus:ring-2 focus:ring-brand/15; }
+  select.field { @apply pr-7 appearance-none bg-no-repeat; background-position: right 9px center; background-size: 9px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238E8E96' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  textarea.field { @apply h-auto py-2 font-mono text-[12px] leading-relaxed; }
+
+  /* 状态标签：小方角，浅底深字 */
+  .tag { @apply inline-flex items-center h-5 px-1.5 rounded text-[11px] font-medium whitespace-nowrap; }
   .tag-ok { @apply bg-ok-50 text-ok; }
   .tag-warn { @apply bg-warn-50 text-warn; }
   .tag-danger { @apply bg-danger-50 text-danger; }
   .tag-brand { @apply bg-brand-50 text-brand; }
-  .tag-gray { @apply bg-line-soft text-ink-faint; }
+  .tag-violet { @apply bg-violet-50 text-violet; }
+  .tag-gray { @apply bg-hover text-ink-soft; }
 
-  /* 通用进度条 */
-  .meter { @apply h-1.5 w-full rounded-full bg-line overflow-hidden; }
+  .meter { @apply h-1 w-full rounded-full bg-line overflow-hidden; }
   .meter > i { @apply block h-full rounded-full; }
+
+  .nav-item { @apply w-full flex items-center gap-2.5 px-2 h-8 rounded-ctl text-[13px] text-ink-soft transition-colors; }
+  .nav-item:hover { @apply bg-hover text-ink; }
+  .nav-item[aria-current="page"] { @apply bg-selected text-ink font-medium; }
+
+  /* 轻量列表行（Things 式）：行间细线，无卡片 */
+  .list-row { @apply flex items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-0; }
+  a.list-row, button.list-row { @apply w-full text-left hover:bg-hover transition-colors; }
 }

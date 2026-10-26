@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { Lock } from "lucide-react";
-import { clsx } from "clsx";
 import { api } from "../lib/api";
 import { useToast } from "../components/ui";
 
-/** 本机账号墙：只在 `qd web --host` 绑定非 127.0.0.1 时出现，拦住还没登录这台
- *  机器控制面板的人。和下面的 GPU 平台登录（Login.tsx）完全无关，过了这一关
- *  才轮到平台登录。 */
+/** 本机账号墙：只在 `qd web --host` 绑定非 127.0.0.1 时出现。邀请码决定角色
+ *  （管理员码 → 管理员，普通码 → 成员，配额 0），由服务端识别，页面上只有一个输入框。 */
 export function AuthGate({ hasAccount, onAuthed }: { hasAccount: boolean; onAuthed: () => void }) {
   const toast = useToast();
   const [tab, setTab] = useState<"login" | "register">(hasAccount ? "login" : "register");
@@ -32,34 +30,30 @@ export function AuthGate({ hasAccount, onAuthed }: { hasAccount: boolean; onAuth
   };
 
   return (
-    <div className="h-full grid place-items-center px-4">
-      <form onSubmit={submit} className="card w-full max-w-sm p-7">
-        <div className="flex items-center gap-2.5 mb-1">
-          <span className="grid place-items-center w-9 h-9 rounded-xl text-white" style={{ background: "linear-gradient(135deg,#7c5cfc,#b14eff)" }}><Lock size={18} /></span>
-          <div className="text-lg font-semibold">qd 控制面板</div>
+    <div className="h-full grid place-items-center px-4 bg-canvas">
+      <form onSubmit={submit} className="card w-full max-w-[340px] p-7">
+        <div className="flex flex-col items-center text-center mb-5">
+          <span className="grid place-items-center w-9 h-9 rounded-[7px] bg-ink text-white mb-3"><Lock size={17} strokeWidth={1.8} /></span>
+          <div className="text-[17px] font-semibold">qd 控制台</div>
+          <p className="text-aux text-ink-faint mt-1">这台机器已对外开放，需要本机账号才能进入</p>
         </div>
-        <p className="text-sm text-ink-faint mb-5">这台机器已对公网开放，需要本机账号才能进入</p>
-        <div className="flex gap-1 mb-5 p-1 rounded-ctl bg-canvas">
-          <button type="button" onClick={() => setTab("login")}
-            className={clsx("flex-1 h-8 rounded-ctl text-sm font-medium transition-colors", tab === "login" ? "bg-white shadow-sm" : "text-ink-soft")}>
-            登录
-          </button>
-          <button type="button" onClick={() => setTab("register")}
-            className={clsx("flex-1 h-8 rounded-ctl text-sm font-medium transition-colors", tab === "register" ? "bg-white shadow-sm" : "text-ink-soft")}>
-            注册
-          </button>
+        <div className="segmented mb-5" role="tablist">
+          <button type="button" role="tab" aria-pressed={tab === "login"} onClick={() => setTab("login")}>登录</button>
+          <button type="button" role="tab" aria-pressed={tab === "register"} onClick={() => setTab("register")}>注册</button>
         </div>
-        <label className="block text-xs font-medium text-ink-soft mb-1">用户名</label>
-        <input className="field mb-3" value={u} onChange={(e) => setU(e.target.value)} placeholder="用户名" autoFocus />
-        <label className="block text-xs font-medium text-ink-soft mb-1">密码</label>
-        <input className="field mb-3" type="password" value={p} onChange={(e) => setP(e.target.value)} placeholder={tab === "register" ? "至少 8 位" : "密码"} />
+        <label className="block text-aux font-medium text-ink-soft mb-1" htmlFor="auth-user">用户名</label>
+        <input id="auth-user" className="field mb-3" value={u} onChange={(e) => setU(e.target.value)} placeholder="用户名" autoComplete="username" autoFocus />
+        <label className="block text-aux font-medium text-ink-soft mb-1" htmlFor="auth-pass">密码</label>
+        <input id="auth-pass" className="field mb-3" type="password" value={p} onChange={(e) => setP(e.target.value)}
+          placeholder={tab === "register" ? "至少 8 位" : "密码"} autoComplete={tab === "register" ? "new-password" : "current-password"} />
         {tab === "register" && (
           <>
-            <label className="block text-xs font-medium text-ink-soft mb-1">邀请码</label>
-            <input className="field mb-4" value={invite} onChange={(e) => setInvite(e.target.value)} placeholder="找启动这台机器的人要" />
+            <label className="block text-aux font-medium text-ink-soft mb-1" htmlFor="auth-invite">邀请码</label>
+            <input id="auth-invite" className="field mb-1" value={invite} onChange={(e) => setInvite(e.target.value)} placeholder="找启动这台机器的人要" autoComplete="off" />
+            <p className="text-[11px] text-ink-faint mb-3">管理员邀请码注册为管理员；普通邀请码注册为成员，GPU 配额默认为 0，需管理员分配。</p>
           </>
         )}
-        <button className={clsx("btn btn-pri w-full justify-center", tab === "login" && "mt-1")} disabled={busy}>
+        <button type="submit" className="btn btn-pri w-full h-9 mt-2" disabled={busy}>
           {busy ? "处理中…" : tab === "register" ? "注册并登录" : "登录"}
         </button>
       </form>

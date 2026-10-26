@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2, Plus, Activity, Terminal as TermIcon, Copy, CopyPlus } from "lucide-react";
-import { api, AppState, pcall, spacesOf, fmtTime, field, asList } from "../lib/api";
+import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus } from "lucide-react";
+import { api, AppState, spacesOf, fmtTime, field, canManageJob, getMe } from "../lib/api";
 import { useCached, dropCache } from "../lib/cache";
 import { useList } from "../lib/table";
-import { PageBar, Spinner, Card, Badge, Toolbar, useToast } from "../components/ui";
-import { Meter, Ring, Spark, Rail, RailCard } from "../components/viz";
-import { Monitor } from "../components/Monitor";
+import { PageBar, Spinner, Badge, Toolbar, StatusDot, SortTh, Th, useToast } from "../components/ui";
+import { Spark } from "../components/viz";
+import { Monitor, MonitorJob } from "../components/Monitor";
 import { CreateForm } from "../components/CreateForm";
 
-const CHIPS: [string, string, (s: string) => boolean][] = [
+const FILTERS: [string, string, (s: string) => boolean][] = [
   ["running", "运行中", (s) => s === "RUNNING"],
   ["waiting", "排队中", (s) => /WAIT|QUEU|PEND|CREAT|START|INIT/.test(s)],
   ["succeeded", "已完成", (s) => /SUCCEED|SUCCESS/.test(s)],
@@ -16,243 +16,176 @@ const CHIPS: [string, string, (s: string) => boolean][] = [
   ["all", "全部", () => true],
 ];
 const st = (j: any) => String(field(j, ["status"], "")).toUpperCase();
-const METRIC_COLOR: Record<string, string> = { gpu_util: "#1070FE", gpu_memory: "#7C5CFC", cpu: "#2AA364", memory: "#E4900B" };
+const gpuOf = (j: any) => Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0;
+const NOT_MINE = "不是你通过 qd web 提交的作业，只能查看";
 
 export function Jobs({ state }: { state: AppState }) {
   const toast = useToast();
   const spaces = spacesOf(state);
+  const me = getMe();
   const [scope, setScope] = useState("mine");
-  const [chip, setChip] = useState("running");
-  const [mon, setMon] = useState<any>(null);
+  const [filter, setFilterKey] = useState("running");
+  const [mon, setMon] = useState<{ job: MonitorJob; tab?: "metrics" | "terminal" } | null>(null);
   const [create, setCreate] = useState(false);
   const [preset, setPreset] = useState<any>(null);
-  const [metrics, setMetrics] = useState<Record<string, any[]>>({});
+  const [util, setUtil] = useState<Record<string, number[]>>({});
 
   const { data: all, loading, refreshing, error, refresh } = useCached<any[]>(
-    `jobs:${scope}`, async () => { const d = await api.jobs(scope, 500); return (d.data?.jobList) || []; }, [scope]);
-
-  const { data: cluster } = useCached("jobs-cluster", async () => {
-    const [idle, quota] = await Promise.all([
-      api.idle(),
-      pcall("GET", "core", "/user/quota/available", {}, state.spaceId).then((d) => d.data).catch(() => null),
-    ]);
-    return { groups: idle.groups || [], quota };
-  });
+    `jobs:${scope}`, async () => { const d = await api.jobs(scope, 500); return d.data?.jobList || []; }, [scope]);
 
   const { view, search, setSearch, filters, setFilter, sortKey, sortDir, toggleSort } = useList(all || [], {
-    searchText: (j) => [field(j, ["jobName", "name"], ""), field(j, ["jobId", "id"], ""), field(j, ["projectName"], ""), st(j), j.spaceName || ""].join(" "),
-    sorts: { created: (j) => Number(new Date(j.createTime).getTime()) || 0 },
+    searchText: (j) => [field(j, ["jobName", "name"], ""), field(j, ["jobId", "id"], ""), field(j, ["projectName"], ""), st(j), j.spaceName || "", j.qdOwner || ""].join(" "),
+    sorts: { created: (j) => Number(new Date(j.createTime).getTime()) || 0, gpu: gpuOf, name: (j) => String(field(j, ["jobName", "name"], "")) },
     initialSort: { key: "created", dir: "desc" },
   });
-  const shown = view.filter((j) => CHIPS.find((c) => c[0] === chip)![2](st(j)));
+  const shown = view.filter((j) => FILTERS.find((c) => c[0] === filter)![2](st(j)));
 
-  // 运行中卡片的曲线（最多 6 个）
+  // 运行中的作业补一条利用率迷你曲线（最多 12 个，渲染后再拉）
   useEffect(() => {
-    shown.filter((j) => st(j) === "RUNNING").slice(0, 6).forEach((j: any) => {
+    shown.filter((j) => st(j) === "RUNNING").slice(0, 12).forEach((j: any) => {
       const id = String(field(j, ["jobId", "id"], ""));
-      if (!id || metrics[id]) return;
-      api.jobMetrics(id, 10, j.spaceId || "").then((d) => setMetrics((m) => ({ ...m, [id]: d.metrics || [] }))).catch(() => {});
+      if (!id || util[id]) return;
+      api.jobMetrics(id, 10, j.spaceId || "").then((d) => {
+        const m = (d.metrics || []).find((x: any) => x.metric === (gpuOf(j) ? "gpu_util" : "cpu"));
+        setUtil((u) => ({ ...u, [id]: m?.points || [] }));
+      }).catch(() => {});
     });
-  }, [all, chip]); // eslint-disable-line
+  }, [all, filter]); // eslint-disable-line
 
-  const act = async (action: string, id: string, sp: string) => {
-    try { const r = await api.bulk(action, [id], sp); const bad = r.find((x: any) => !x.ok);
-      bad ? toast(bad.error, true) : toast("已" + (action.includes("cancel") ? "取消" : "删除") + " " + id); dropCache("jobs"); dropCache("overview"); refresh(); }
-    catch (e: any) { toast(e.message, true); }
+  const act = async (action: "job-cancel" | "job-delete", j: any) => {
+    const id = String(field(j, ["jobId", "id"], "")), name = field(j, ["jobName", "name"], id);
+    if (!confirm(action === "job-cancel" ? `取消作业 ${name}？运行中的进程会被停止。` : `删除作业 ${name}？记录和日志将无法再查看。`)) return;
+    try {
+      const r = await api.bulk(action, [id], j.spaceId || "");
+      const bad = r.find((x: any) => !x.ok);
+      if (bad) toast(bad.error, true); else toast((action === "job-cancel" ? "已取消 " : "已删除 ") + name);
+      dropCache("jobs"); dropCache("overview"); refresh();
+    } catch (e: any) { toast(e.message, true); }
   };
 
-  // 复制作业：拉详情，还原成新建表单能吃的配置
-  const cloneJob = async (id: string, sp: string, name: string) => {
-    toast("正在读取作业配置…");
+  // 复制作业：拉详情，还原成提交表单能用的配置
+  const cloneJob = async (j: any) => {
+    const id = String(field(j, ["jobId", "id"], "")), sp = j.spaceId || "";
     try {
       const d = await api.job(id, sp);
-      const j = d?.data || d || {};
-      const role = (j.taskroleList || j.taskroles || [])[0] || {};
+      const x = d?.data || d || {};
+      const role = (x.taskroleList || x.taskroles || [])[0] || {};
       setPreset({
-        jobName: (name || "job") + "-copy",
-        spaceId: j.spaceId || sp,
-        projectId: String(field(j, ["projectId"], "")),
-        rsgroupId: String(field(j, ["rsgroupId"], "")),
-        imageId: field(j, ["imageId"], 0),
-        maxRunHour: Number(field(j, ["maxRunHour"], 24)) || 24,
-        taskroles: [{
-          runScript: field(role, ["runScript", "command"], ""),
-          cpu: Number(field(role, ["cpu"], 0)) || undefined,
-          memory: Number(field(role, ["memory"], 0)) || undefined,
-          storage: Number(field(role, ["storage"], 0)) || undefined,
-          gpu: Number(field(role, ["gpu", "gpuNumber"], 0)) || 0,
-          gpuType: field(role, ["gpuType", "gpuModel"], ""),
-        }],
+        jobName: field(j, ["jobName", "name"], "job") + "-copy", spaceId: x.spaceId || sp,
+        projectId: String(field(x, ["projectId"], "")), rsgroupId: String(field(x, ["rsgroupId"], "")),
+        imageId: field(x, ["imageId"], 0), maxRunHour: Number(field(x, ["maxRunHour"], 24)) || 24,
+        taskroles: [{ runScript: field(role, ["runScript", "command"], ""), cpu: Number(field(role, ["cpu"], 0)) || undefined,
+          memory: Number(field(role, ["memory"], 0)) || undefined, storage: Number(field(role, ["storage"], 0)) || undefined,
+          gpu: Number(field(role, ["gpu", "gpuNumber"], 0)) || 0, gpuType: field(role, ["gpuType", "gpuModel"], "") }],
       });
       setCreate(true);
-    } catch (e: any) { toast("读取配置失败：" + e.message, true); }
+    } catch (e: any) { toast("读取作业配置失败：" + e.message, true); }
   };
 
-  const q = cluster?.quota;
-  const topGroups = (cluster?.groups || []).filter((g: any) => Number(g.capacity?.gpuCount)).slice(0, 3);
+  const monitorJob = (j: any): MonitorJob => ({ id: String(field(j, ["jobId", "id"], "")), name: field(j, ["jobName", "name"]), space: j.spaceId || "", kind: "job", gpu: gpuOf(j), owner: j.qdOwner });
+  const counts = Object.fromEntries(FILTERS.map(([k, , f]) => [k, view.filter((j) => f(st(j))).length]));
+  const runningGpu = (all || []).filter((j) => st(j) === "RUNNING").reduce((a, j) => a + gpuOf(j), 0);
 
   return (
-    <div className="flex gap-4 items-start">
-      <div className="flex-1 min-w-0">
-        <PageBar title="作业" hint="任务卡内嵌实时监控，点卡片看大图与终端"
-          right={<div className="flex items-center gap-2">
-            <select className="field w-24" value={scope} onChange={(e) => setScope(e.target.value)}>
-              {["mine", "shared", "public", "all"].map((s) => <option key={s}>{s}</option>)}</select>
-            <button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>
-          </div>} />
+    <>
+      <PageBar title="作业" hint={all ? `${counts.running} 个运行中，占用 ${runningGpu} 卡` : undefined}
+        right={<div className="flex items-center gap-2">
+          <button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>
+          <button className="btn btn-pri" onClick={() => { setPreset(null); setCreate(true); }}><Plus size={14} />提交作业</button>
+        </div>} />
 
-        {/* 集群总览条 */}
-        <Card className="card-pad mb-4">
-          <div className="flex flex-wrap items-center gap-5">
-            {topGroups.map((g: any, i: number) => {
-              const total = Number(g.capacity?.gpuCount) || 0, free = Number(g.idle?.gpuWholeCardsFree) || 0;
-              return (
-                <div key={i} className="flex items-center gap-3">
-                  <Ring pct={total ? (free / total) * 100 : 0} tone="ok" />
-                  <div>
-                    <div className="text-aux text-ink-soft flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-ok" />{g.rsgroupName || g.rsgroupId}</div>
-                    <div><b className="text-[22px] leading-tight">{free}</b>
-                      <span className="text-body text-ink-faint"> / {total} 张</span></div>
-                    <div className="text-[11px] text-ink-faint">{asList(g.capacity?.gpuTypes)[0] || "-"}</div>
-                  </div>
-                </div>
-              );
-            })}
-            {q && (
-              <div className="min-w-[220px]">
-                <div className="text-aux text-ink-soft mb-1">我的空间配额</div>
-                <div className="text-body mb-1">已用 <b>{q.usedGpuCardCnt ?? 0}</b> / {(q.gpuquotaDataList?.[0]?.cardCnt) ?? q.gpuCardCnt ?? 0} 卡</div>
-                <Meter value={q.usedGpuCardCnt || 0} total={(q.gpuquotaDataList?.[0]?.cardCnt) || q.gpuCardCnt || 1} tone="brand" />
-              </div>
-            )}
-            <div className="flex gap-5 ml-auto">
-              {[["运行中作业", (all || []).filter((j) => st(j) === "RUNNING").length],
-                ["排队中作业", (all || []).filter((j) => /WAIT|QUEU|PEND/.test(st(j))).length],
-                ["作业总数", (all || []).length]].map(([l, v]) => (
-                <div key={String(l)} className="text-center">
-                  <div className="text-[22px] font-semibold leading-tight">{v as number}</div>
-                  <div className="text-[11px] text-ink-faint">{l as string}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        <Toolbar search={search} onSearch={setSearch} placeholder="搜索作业名 / ID / 项目">
-          {spaces.length > 1 && (
-            <select className="field w-28" value={filters.space || ""} onChange={(e) => setFilter("space", e.target.value, (j, v) => j.spaceId === v)}>
-              <option value="">全部空间</option>{spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-          )}
-          <div className="flex-1" />
-          <button className="btn btn-pri" onClick={() => setCreate(true)}><Plus size={14} />新建作业</button>
-        </Toolbar>
-
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          {CHIPS.map(([k, label]) => {
-            const n = view.filter((j) => CHIPS.find((c) => c[0] === k)![2](st(j))).length;
-            return <button key={k} onClick={() => setChip(k)} className={"chip " + (chip === k ? "chip-on" : "")}>{label}<span className="ml-1 text-ink-faint">{n}</span></button>;
-          })}
+      <Toolbar search={search} onSearch={setSearch} placeholder="搜索名称、ID、项目、提交者">
+        <div className="flex items-center gap-0.5" role="tablist" aria-label="按状态筛选">
+          {FILTERS.map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilterKey(k)} className={"chip " + (filter === k ? "chip-on" : "")}>
+              {label}<span className="ml-1.5 text-ink-faint tabular-nums">{counts[k]}</span>
+            </button>
+          ))}
         </div>
-
-        {error && !all && <Card className="card-pad text-body mb-4">加载失败：{error}</Card>}
-        {loading ? <Spinner /> : (
-          <div className="space-y-3">
-            {shown.length ? shown.map((j: any, i: number) => {
-              const id = String(field(j, ["jobId", "id"], "")), sp = j.spaceId || "";
-              const isRun = st(j) === "RUNNING";
-              const ms = metrics[id] || [];
-              return (
-                <Card key={i} className="p-4 hover:border-brand/30 transition-colors">
-                  <div className="flex items-start gap-4">
-                    <div className="min-w-[230px] max-w-[280px]">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge text={field(j, ["statusName", "status"])} />
-                        <a className="text-[15px] font-semibold text-brand hover:underline cursor-pointer truncate"
-                          onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}>
-                          {field(j, ["jobName", "name"])}</a>
-                      </div>
-                      <div className="text-[11px] text-ink-faint flex items-center gap-1">
-                        #{id}<button className="hover:text-brand" onClick={() => { navigator.clipboard?.writeText(id); toast("已复制作业 ID"); }}><Copy size={11} /></button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        <span className="tag tag-gray">{field(j, ["projectName", "projectId"], "-")}</span>
-                        <span className="tag tag-gray">{j.spaceName || "-"}</span>
-                      </div>
-                      <div className="text-[11px] text-ink-faint mt-2">创建 {fmtTime(j.createTime)}</div>
-                    </div>
-
-                    <div className="shrink-0 text-center px-3">
-                      <div className="text-[20px] font-semibold leading-tight">{field(j, ["statGpu", "gpuCount", "GPU"], 0)}</div>
-                      <div className="text-[11px] text-ink-faint">GPU</div>
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      {isRun ? (ms.length ? (() => {
-                        const hasGpu = Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) > 0;
-                        const shownMs = ms.filter((m: any) => hasGpu || !m.metric.startsWith("gpu"));
-                        return (
-                        <div className={"grid gap-3 " + (shownMs.length > 2 ? "grid-cols-4" : "grid-cols-2 max-w-md")}>
-                          {shownMs.map((m: any) => (
-                            <div key={m.metric}>
-                              <div className="text-[11px] text-ink-faint">{m.label}</div>
-                              <div className="text-[15px] font-semibold leading-tight">{m.last != null ? m.last.toFixed(0) : "-"}<span className="text-[11px] font-normal text-ink-faint">{m.unit}</span></div>
-                              <Spark points={m.points || []} color={METRIC_COLOR[m.metric]} h={30} />
-                            </div>
-                          ))}
-                        </div>
-                        ); })()
-                      : <div className="text-aux text-ink-faint flex items-center gap-1.5 py-4"><Loader2 size={12} className="animate-spin" />读取实时监控…</div>)
-                        : <div className="text-aux text-ink-faint py-4">非运行状态，无实时监控</div>}
-                    </div>
-
-                    <div className="shrink-0 flex flex-col gap-1.5">
-                      {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}><Activity size={12} />监控</button>}
-                      {isRun && <button className="btn btn-mini" onClick={() => setMon({ id, name: field(j, ["jobName", "name"]), space: sp, kind: "job", gpu: Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0 })}><TermIcon size={12} />终端</button>}
-                      <button className="btn btn-mini" onClick={() => cloneJob(id, sp, String(field(j, ["jobName", "name"], "")))}><CopyPlus size={12} />复制</button>
-                      <button className="btn btn-mini" onClick={() => act("job-cancel", id, sp)}>取消</button>
-                      <button className="btn btn-mini btn-danger" onClick={() => act("job-delete", id, sp)}>删除</button>
-                    </div>
-                  </div>
-                </Card>
-              );
-            }) : <Card className="card-pad text-body text-ink-faint">没有匹配的作业</Card>}
-            <p className="text-aux text-ink-faint">显示 {shown.length} / {(all || []).length} 个（scope={scope}）</p>
-          </div>
+        <div className="flex-1" />
+        {spaces.length > 1 && (
+          <select className="field w-32" aria-label="空间" value={filters.space || ""} onChange={(e) => setFilter("space", e.target.value, (j, v) => j.spaceId === v)}>
+            <option value="">全部空间</option>{spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
         )}
-      </div>
+        <select className="field w-28" aria-label="范围" value={scope} onChange={(e) => setScope(e.target.value)}>
+          <option value="mine">我的项目</option><option value="shared">共享项目</option><option value="public">公开项目</option><option value="all">全部项目</option>
+        </select>
+      </Toolbar>
 
-      <Rail>
-        <RailCard title="快速创建">
-          <p className="text-aux text-ink-faint mb-3">选镜像与资源规格，一键提交训练作业。开发机的申请与启停只在 CLI 做。</p>
-          <button className="btn btn-pri w-full mb-2" onClick={() => setCreate(true)}><Plus size={14} />新建作业</button>
-          <button className="btn w-full" onClick={() => { location.hash = "devs"; }}>查看开发机</button>
-        </RailCard>
-        <RailCard title="常用工具">
-          <div className="grid grid-cols-2 gap-2">
-            {[["开发机", "devs"], ["镜像仓库", "images"], ["文件传输", "transfer"], ["配额", "quota"]].map(([l, h]) => (
-              <button key={h} className="btn h-auto py-2.5" onClick={() => { location.hash = h; }}>{l}</button>
-            ))}
+      {error && !all && <div className="card p-4 text-body mb-3">作业列表读取失败：{error}。检查平台连接后点刷新。</div>}
+      {loading ? <Spinner /> : (
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px] border-collapse">
+              <thead>
+                <tr className="text-left text-[12px] text-ink-faint border-b border-line bg-canvas/60">
+                  <SortTh sortKey="name" active={sortKey === "name"} dir={sortDir} onSort={toggleSort}>作业</SortTh>
+                  <Th>状态</Th>
+                  <SortTh sortKey="gpu" active={sortKey === "gpu"} dir={sortDir} onSort={toggleSort} num>GPU</SortTh>
+                  <Th>近 10 分钟利用率</Th>
+                  <Th>项目 / 空间</Th>
+                  <Th>提交者</Th>
+                  <SortTh sortKey="created" active={sortKey === "created"} dir={sortDir} onSort={toggleSort}>创建时间</SortTh>
+                  <Th><span className="sr-only">操作</span></Th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((j: any) => {
+                  const id = String(field(j, ["jobId", "id"], ""));
+                  const run = st(j) === "RUNNING";
+                  const active = run || /WAIT|QUEU|PEND|CREAT|START|INIT/.test(st(j));
+                  const mine = canManageJob(j);
+                  const selfOwned = !!j.qdOwner && j.qdOwner.toLowerCase() === (me.username || "").toLowerCase();
+                  const pts = util[id];
+                  return (
+                    <tr key={id} className="border-b border-line-soft last:border-0 hover:bg-hover" data-job={id}>
+                      <td className="px-4 py-2 max-w-[320px]">
+                        <button className="flex items-center gap-2 min-w-0 text-left" onClick={() => setMon({ job: monitorJob(j) })}>
+                          <StatusDot status={st(j)} />
+                          <span className="min-w-0">
+                            <span className="block font-medium truncate hover:text-brand">{field(j, ["jobName", "name"])}</span>
+                            <span className="block text-[11px] text-ink-faint tabular-nums">#{id}</span>
+                          </span>
+                        </button>
+                      </td>
+                      <td className="px-4 py-2"><Badge text={field(j, ["statusName", "status"])} /></td>
+                      <td className="px-4 py-2 text-right tabular-nums">{gpuOf(j) || <span className="text-ink-faint">—</span>}</td>
+                      <td className="px-4 py-2">
+                        {run ? (pts ? <span className="flex items-center gap-2"><Spark points={pts} w={88} h={20} /><span className="text-[11px] text-ink-soft tabular-nums w-8">{pts.length ? Math.round(pts[pts.length - 1]) + "%" : "—"}</span></span>
+                          : <Loader2 size={12} className="animate-spin text-ink-faint" />) : <span className="text-ink-faint">—</span>}
+                      </td>
+                      <td className="px-4 py-2 max-w-[200px]">
+                        <span className="block truncate">{field(j, ["projectName", "projectId"], "—")}</span>
+                        <span className="block text-[11px] text-ink-faint truncate">{j.spaceName || "—"}</span>
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">{j.qdOwner ? (selfOwned ? <span className="tag tag-brand">我提交的</span> : j.qdOwner) : <span className="text-ink-faint">—</span>}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-ink-soft tabular-nums">{fmtTime(j.createTime)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-right">
+                        <span className="inline-flex items-center gap-1">
+                          {run && <button className="btn btn-ghost btn-mini" disabled={!mine} title={mine ? "打开网页终端" : NOT_MINE} onClick={() => setMon({ job: monitorJob(j), tab: "terminal" })}><TermIcon size={13} />终端</button>}
+                          <button className="btn btn-ghost btn-mini" title="按这个作业的配置新建" onClick={() => cloneJob(j)}><CopyPlus size={13} />复制</button>
+                          {active
+                            ? <button className="btn btn-ghost btn-mini" disabled={!mine} title={mine ? undefined : NOT_MINE} onClick={() => act("job-cancel", j)}>取消</button>
+                            : <button className="btn btn-ghost btn-mini btn-danger" disabled={!mine} title={mine ? undefined : NOT_MINE} onClick={() => act("job-delete", j)}>删除</button>}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!shown.length && (
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-faint">
+                    {(all || []).length ? "没有符合条件的作业，换个状态或清空搜索。" : <>还没有作业。<button className="text-brand hover:underline" onClick={() => setCreate(true)}>提交一个</button></>}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </RailCard>
-        <RailCard title="集群资源" action={<button className="text-aux text-brand hover:underline" onClick={() => { location.hash = "nodes"; }}>节点 →</button>}>
-          {(cluster?.groups || []).slice(0, 5).map((g: any, i: number) => {
-            const total = Number(g.capacity?.gpuCount) || 0, free = Number(g.idle?.gpuWholeCardsFree) || 0;
-            return (
-              <div key={i} className="mb-2.5 last:mb-0">
-                <div className="flex items-baseline justify-between text-aux">
-                  <span className="truncate">{g.rsgroupName || g.rsgroupId}</span>
-                  <span className="text-ink-faint"><b className={free ? "text-ok" : ""}>{free}</b> / {total}</span>
-                </div>
-                <div className="mt-1"><Meter value={total - free} total={total || 1} tone={total && (total - free) / total > 0.9 ? "danger" : "brand"} /></div>
-              </div>
-            );
-          })}
-        </RailCard>
-      </Rail>
+        </div>
+      )}
+      {all && <p className="text-[11px] text-ink-faint mt-2">显示 {shown.length} / {all.length} 个作业。点作业名查看性能监控、运行日志和终端。</p>}
 
-      <Monitor job={mon} onClose={() => setMon(null)} baseUrl={state.baseUrl} />
-      <CreateForm kind="job" state={state} open={create} initial={preset} onClose={() => { setCreate(false); setPreset(null); }} onDone={refresh} />
-    </div>
+      <Monitor job={mon?.job || null} initialTab={mon?.tab} onClose={() => setMon(null)} />
+      {create && <CreateForm kind="job" state={state} open initial={preset} onClose={() => { setCreate(false); setPreset(null); }} onDone={refresh} />}
+    </>
   );
 }

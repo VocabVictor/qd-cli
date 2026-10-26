@@ -5,31 +5,39 @@ export function Card({ className, children }: { className?: string; children: Re
   return <div className={clsx("card", className)}>{children}</div>;
 }
 
+/** 面板：白底细线容器，可带标题行（标题 + 右侧操作）。 */
+export function Panel({ title, meta, action, className, children }: { title?: ReactNode; meta?: ReactNode; action?: ReactNode; className?: string; children: ReactNode }) {
+  return (
+    <section className={clsx("card overflow-hidden", className)}>
+      {title !== undefined && (
+        <div className="panel-head">
+          <h2 className="text-h2 shrink-0">{title}</h2>
+          {meta && <span className="text-aux text-ink-faint truncate">{meta}</span>}
+          <div className="flex-1" />
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
 export function PageBar({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) {
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-      {hint && <span className="text-sm text-ink-faint">{hint}</span>}
+    <div className="flex items-center gap-3 h-9 mb-4">
+      <h1 className="text-h1">{title}</h1>
+      {hint && <span className="text-aux text-ink-faint">{hint}</span>}
       <div className="flex-1" />
       {right}
     </div>
   );
 }
 
-export function Tile({ label, value, unit, tone = "brand" }: { label: string; value: ReactNode; unit?: string; tone?: "brand" | "mint" | "rose" | "amber" }) {
-  const wash = {
-    brand: "from-brand-50 to-white", mint: "from-ok-50 to-white",
-    rose: "from-danger-50 to-white", amber: "from-warn-50 to-white",
-  }[tone];
-  const dot = { brand: "bg-brand", mint: "bg-ok", rose: "bg-danger", amber: "bg-warn" }[tone];
+export function Tile({ label, value, unit }: { label: string; value: ReactNode; unit?: string; tone?: string }) {
   return (
-    <div className={clsx("rounded-card border border-line p-4 bg-gradient-to-br", wash)}>
-      <div className="flex items-center gap-2 text-xs font-medium text-ink-soft">
-        <span className={clsx("w-1.5 h-1.5 rounded-full", dot)} />{label}
-      </div>
-      <div className="mt-2 text-[28px] leading-none font-semibold tracking-tight">
-        {value}{unit && <span className="text-sm font-normal text-ink-faint ml-1">{unit}</span>}
-      </div>
+    <div className="card p-4">
+      <div className="text-aux text-ink-soft">{label}</div>
+      <div className="mt-1 text-big">{value}{unit && <span className="text-body font-normal text-ink-faint ml-1">{unit}</span>}</div>
     </div>
   );
 }
@@ -44,40 +52,47 @@ export function Badge({ text }: { text: any }) {
   else if (/FAIL|ERROR|满|失败/.test(s)) tone = "red";
   else if (/WAIT|QUEU|PEND|CREAT|START|INIT|等待/.test(s)) tone = "amber";
   else if (/SUCC|成功|空闲|可用/.test(s)) tone = "brand";
-  return <span className={clsx("tag", TONES[tone])}>{String(text ?? "-")}</span>;
+  return <span className={clsx("tag", TONES[tone])}>{String(text ?? "—")}</span>;
+}
+
+/** 状态圆点：列表行首用，比标签更轻。 */
+export function StatusDot({ status }: { status: any }) {
+  const s = String(status ?? "").toUpperCase();
+  const c = /RUN/.test(s) ? "bg-ok" : /FAIL|ERROR/.test(s) ? "bg-danger" : /WAIT|QUEU|PEND|CREAT|START|INIT/.test(s) ? "bg-warn" : "bg-ink-faint/50";
+  return <span className={clsx("inline-block w-2 h-2 rounded-full shrink-0", c)} aria-hidden />;
 }
 
 export function Spinner({ label = "加载中…" }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 py-16 text-ink-faint text-sm">
-      <span className="w-4 h-4 rounded-full border-2 border-brand-100 border-t-brand animate-spin" />{label}
+    <div className="flex items-center justify-center gap-2.5 py-12 text-ink-faint text-[13px]">
+      <span className="w-3.5 h-3.5 rounded-full border-2 border-line border-t-brand animate-spin" />{label}
     </div>
   );
 }
 
-export function Table({ head, children, cols }: { head: ReactNode; children: ReactNode; cols?: number }) {
+export function Table({ head, children }: { head: ReactNode; children: ReactNode; cols?: number }) {
   return (
-    <Card className="overflow-hidden">
+    <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
-          <thead><tr className="text-left text-[11px] uppercase tracking-wide text-ink-faint border-b border-line bg-canvas/40">{head}</tr></thead>
+        <table className="w-full text-[13px] border-collapse">
+          <thead><tr className="text-left text-[12px] text-ink-faint border-b border-line bg-canvas/60">{head}</tr></thead>
           <tbody>{children}</tbody>
         </table>
       </div>
-    </Card>
+    </div>
   );
 }
 export const Th = ({ children, num }: { children?: ReactNode; num?: boolean }) =>
-  <th className={clsx("font-semibold px-4 py-3", num && "text-right")}>{children}</th>;
+  <th className={clsx("font-medium px-4 h-9 whitespace-nowrap", num && "text-right")}>{children}</th>;
 export const Td = ({ children, num, clip, className }: { children?: ReactNode; num?: boolean; clip?: boolean; className?: string }) =>
-  <td className={clsx("px-4 py-3 border-b border-line/60", num && "text-right tabular-nums", clip && "max-w-[220px] truncate", className)}>{children}</td>;
-
+  <td className={clsx("px-4 py-2 border-b border-line-soft", num && "text-right tabular-nums", clip && "max-w-[220px] truncate", className)}>{children}</td>;
 
 export function SortTh({ children, sortKey: k, active, dir, onSort, num }: { children?: ReactNode; sortKey: string; active?: boolean; dir?: "asc" | "desc"; onSort?: (k: string) => void; num?: boolean }) {
   return (
-    <th className={clsx("font-semibold px-4 py-3 select-none cursor-pointer hover:text-ink transition-colors", num && "text-right")} onClick={() => onSort?.(k)}>
+    <th className={clsx("font-medium px-4 h-9 select-none cursor-pointer hover:text-ink transition-colors whitespace-nowrap", num && "text-right")}
+      onClick={() => onSort?.(k)} aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
       <span className={clsx("inline-flex items-center gap-1", num && "flex-row-reverse")}>{children}
-        <span className={clsx("text-[9px] leading-none", active ? "text-brand" : "text-line")}>{active ? (dir === "asc" ? "▲" : "▼") : "▾"}</span>
+        <span className={clsx("text-[9px] leading-none", active ? "text-ink" : "text-line")}>{active ? (dir === "asc" ? "▲" : "▼") : "▾"}</span>
       </span>
     </th>
   );
@@ -88,8 +103,10 @@ export function Toolbar({ search, onSearch, placeholder, children }: { search?: 
     <div className="flex items-center gap-2 mb-3 flex-wrap">
       {onSearch !== undefined && (
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint">⌕</span>
-          <input className="field pl-8 w-64" placeholder={placeholder || "搜索…"} value={search} onChange={(e) => onSearch(e.target.value)} />
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.6" /><path d="M11 11l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          <input className="field pl-8 w-64" placeholder={placeholder || "搜索…"} value={search} onChange={(e) => onSearch(e.target.value)} aria-label={placeholder || "搜索"} />
         </div>
       )}
       {children}
@@ -111,10 +128,10 @@ export function ToastHost({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="fixed bottom-5 right-5 flex flex-col gap-2 z-50">
+      <div className="fixed bottom-5 right-5 flex flex-col gap-2 z-50" role="status" aria-live="polite">
         {items.map((t) => (
-          <div key={t.id} className={clsx("px-4 py-2.5 rounded-xl text-sm shadow-pop text-white max-w-sm",
-            t.err ? "bg-danger" : "bg-ink")}>{t.msg}</div>
+          <div key={t.id} className={clsx("px-3.5 py-2.5 rounded-ctl text-[13px] shadow-pop max-w-sm border",
+            t.err ? "bg-white text-danger border-danger/30" : "bg-ink text-white border-ink")}>{t.msg}</div>
         ))}
       </div>
     </ToastCtx.Provider>

@@ -9,19 +9,37 @@ export interface AppState {
   insecureTls?: boolean;
 }
 
+/** GPU 卡数上限 / 占用：总数、按空间 ID、按资源组 ID。 */
+export interface GpuLimits { total: number; spaces: Record<string, number>; groups: Record<string, number> }
+
 /** 本机 qd web 账号（谁能打开这台机器上的控制面板），和上面的平台账号无关。 */
 export interface LocalAuthState {
   required: boolean;
   hasAccount: boolean;
   loggedIn: boolean;
   username?: string;
+  role?: "admin" | "user";
+  quota?: GpuLimits;
+  usage?: GpuLimits;
 }
+
+export interface AdminUser { username: string; role: "admin" | "user"; quota: GpuLimits; usage: GpuLimits; createdAt: number }
+
+/** 当前本机用户，App 启动时写入，页面据此隐藏无权限的按钮（服务端仍会再校验）。 */
+let me: LocalAuthState = { required: false, hasAccount: true, loggedIn: true, role: "admin" };
+export const setMe = (s: LocalAuthState) => { me = s; };
+export const getMe = () => me;
+export const isAdmin = () => me.role === "admin";
+/** 作业是否可由当前用户操作：管理员全部可以，普通用户只能操作 qd web 记录在自己名下的。 */
+export const canManageJob = (job: any) => isAdmin() || (!!me.username && String(job?.qdOwner || "").toLowerCase() === me.username.toLowerCase());
 
 async function qfetch<T = any>(url: string, opts?: RequestInit): Promise<T> {
   const r = await fetch(url, opts);
   let j: any = null;
   try { j = await r.json(); } catch { throw new Error("响应不是 JSON (HTTP " + r.status + ")"); }
-  if (r.status === 401) { window.dispatchEvent(new CustomEvent("qd-unauth")); throw new Error(j?.error || "未登录"); }
+  // 登录/注册接口的 401 是"密码或邀请码不对"，交给表单自己提示；其他接口的 401 才表示会话失效。
+  if (r.status === 401 && !url.startsWith("/api/auth/")) window.dispatchEvent(new CustomEvent("qd-unauth"));
+  if (r.status === 401) throw new Error(j?.error || "未登录");
   if (!j.ok) throw new Error(j.error || "HTTP " + r.status);
   return j.data as T;
 }
@@ -57,6 +75,14 @@ export const api = {
     register: (username: string, password: string, inviteCode: string) =>
       qpost("/api/auth/register", { username, password, inviteCode }),
     logout: () => qpost("/api/auth/logout"),
+    changePassword: (oldPassword: string, newPassword: string) => qpost("/api/auth/password", { oldPassword, newPassword }),
+  },
+  admin: {
+    users: () => qget<{ users: AdminUser[] }>("/api/admin/users"),
+    setQuota: (name: string, quota: GpuLimits) => qpost(`/api/admin/users/${encodeURIComponent(name)}/quota`, quota),
+    setRole: (name: string, role: "admin" | "user") => qpost(`/api/admin/users/${encodeURIComponent(name)}/role`, { role }),
+    resetPassword: (name: string, password: string) => qpost(`/api/admin/users/${encodeURIComponent(name)}/password`, { password }),
+    remove: (name: string) => qfetch(`/api/admin/users/${encodeURIComponent(name)}`, { method: "DELETE" }),
   },
 };
 

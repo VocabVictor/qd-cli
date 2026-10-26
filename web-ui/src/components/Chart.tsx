@@ -1,19 +1,24 @@
-// 轻量内联 SVG 折线图，无第三方库。
-export function LineChart({ points, unit = "%", color = "#7c5cfc", max = 100 }: { points: number[]; unit?: string; color?: string; max?: number }) {
-  const w = 260, h = 60, pad = 4;
+// 轻量内联 SVG 折线图：0–max 固定量程，三条细网格线与刻度，便于不同指标横向比较。
+export function LineChart({ points, unit = "%", color = "#0A66D8", max = 100, minutes = 10 }: { points: number[]; unit?: string; color?: string; max?: number; minutes?: number }) {
+  const w = 320, h = 96, left = 26, right = 4, top = 6, bottom = 16;
   const n = points.length;
-  const top = Math.max(max, ...points, 1);
-  const path = n > 1 ? points.map((p, i) => {
-    const x = pad + (i / (n - 1)) * (w - pad * 2);
-    const y = h - pad - (p / top) * (h - pad * 2);
-    return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ") : "";
-  const area = path ? `${path} L${w - pad},${h - pad} L${pad},${h - pad} Z` : "";
+  const ceil = Math.max(max, ...points, 1);
+  const x = (i: number) => left + (n > 1 ? (i / (n - 1)) * (w - left - right) : 0);
+  const y = (v: number) => top + (1 - v / ceil) * (h - top - bottom);
+  const path = n > 1 ? points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p).toFixed(1)}`).join(" ") : "";
+  const grid = [0, 0.5, 1].map((f) => ceil * f);
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-14" preserveAspectRatio="none">
-      {area && <path d={area} fill={color} opacity={0.08} />}
-      {path && <path d={path} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />}
-      {!n && <text x={w / 2} y={h / 2} textAnchor="middle" className="fill-current text-ink-faint" fontSize="9">暂无数据</text>}
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-24" preserveAspectRatio="none" role="img" aria-label={`近 ${minutes} 分钟曲线`}>
+      {grid.map((g) => (
+        <g key={g}>
+          <line x1={left} x2={w - right} y1={y(g)} y2={y(g)} stroke="#EFEFF1" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+          <text x={left - 4} y={y(g) + 3} textAnchor="end" fontSize="8" fill="#8E8E96">{Math.round(g)}{unit === "%" ? "" : ""}</text>
+        </g>
+      ))}
+      <text x={left} y={h - 3} fontSize="8" fill="#8E8E96">-{minutes} 分钟</text>
+      <text x={w - right} y={h - 3} textAnchor="end" fontSize="8" fill="#8E8E96">现在</text>
+      {path && <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+      {!n && <text x={(w + left) / 2} y={h / 2} textAnchor="middle" fontSize="10" fill="#8E8E96">暂无数据</text>}
     </svg>
   );
 }
