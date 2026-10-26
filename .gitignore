@@ -15,3 +15,6 @@ live/
 /src/web/index.html
 .playwright/
 .playwright-cli/
+
+# e2e screenshots (web-ui/e2e/ui.mjs)
+/web-ui/e2e/screenshots/

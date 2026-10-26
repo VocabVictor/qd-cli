@@ -61,7 +61,9 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
   qd image list [--source current|mine] [--keywords TEXT] [--page N] [--size N]
   qd image repositories [--page N] [--size N]
 
-  qd web [--host ADDR] [--port N] [--password PASS] [--open]
+  qd web [--host ADDR] [--port N] [--open]
+      --host 非 127.0.0.1 时须设置环境变量 QD_WEB_INVITE_CODE（普通用户注册码）
+      和 QD_WEB_ADMIN_INVITE_CODE（管理员注册码）；普通用户默认 GPU 配额为 0
   qd api METHOD PATH [--service core|auth|tool|absolute] [--file body.json]
   qd bench PATH [--service core|auth|tool|absolute] [--file query.json]
                    [--requests N] [--warmup N] [--concurrency N]
@@ -79,7 +81,7 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
   -V, --version        显示版本
 
 安全:
-  login 默认隐藏输入密码并用 Windows DPAPI 保存自动登录凭据；可用 --no-remember 禁用。
+  login 默认隐藏输入密码并加密保存自动登录凭据（Windows 用 DPAPI，Linux/macOS 用绑定本机的 AES-256-GCM）；可用 --no-remember 禁用。
   Token 和凭据不会出现在命令行、可读配置或输出中。
 "#;
 

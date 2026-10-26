@@ -44,7 +44,7 @@ pub(crate) async fn login(config: &Config, args: &mut Args, compact: bool) -> Re
         &json!({
             "ok": true,
             "username": username,
-            "credentialStore": "Windows DPAPI",
+            "credentialStore": if cfg!(windows) { "Windows DPAPI" } else { "AES-256-GCM（绑定本机 machine-id 与当前用户）" },
             "autoLogin": remember
         }),
         compact,

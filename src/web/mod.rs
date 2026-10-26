@@ -1,6 +1,12 @@
 mod accounts;
 mod local_session;
+mod ownership;
 mod proxy;
+mod query;
+mod quota;
+mod rate_limit;
+mod roles;
+mod routes_admin;
 mod routes_auth;
 mod routes_core;
 mod routes_jobs;
@@ -22,22 +28,40 @@ const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool) -> Result<()> {
     let port = option_u64(args, "--port", 7717, 1, 65535)? as u16;
     let host = args.take_option("--host")?.unwrap_or_else(|| "127.0.0.1".to_owned());
-    let password = args
-        .take_option("--password")?
-        .or_else(|| std::env::var("QD_WEB_PASSWORD").ok());
+    if args.take_option("--password")?.is_some() {
+        bail!("--password 已拆分为 --invite-code（普通用户）和 --admin-invite-code（管理员）");
+    }
+    // 推荐用环境变量传邀请码：命令行参数会出现在 ps 里。
+    let mut invite = |flag: &str, env: &str| -> Result<Option<String>> {
+        Ok(args
+            .take_option(flag)?
+            .or_else(|| std::env::var(env).ok())
+            .map(|code| code.trim().to_owned())
+            .filter(|code| !code.is_empty()))
+    };
+    let invite_user = invite("--invite-code", "QD_WEB_INVITE_CODE")?;
+    let invite_admin = invite("--admin-invite-code", "QD_WEB_ADMIN_INVITE_CODE")?;
     let open = args.take_flag("--open");
     args.ensure_empty()?;
     config.require_base_url()?;
 
     let public = host != "127.0.0.1";
-    if public && password.is_none() {
-        bail!(
-            "绑定 {host} 会把本机登录态暴露给能连到这个端口的任何人；\
-             必须用 --password 或 QD_WEB_PASSWORD 环境变量设置一个注册邀请码\
-             （访问本身改用网页登录/注册，邀请码只用来防止陌生人自己注册账号）"
-        );
+    if public {
+        let (Some(user_code), Some(admin_code)) = (&invite_user, &invite_admin) else {
+            bail!(
+                "绑定 {host} 会把本机平台登录态暴露给能连到这个端口的人；必须同时设置 \
+                 QD_WEB_INVITE_CODE（普通用户注册码）和 QD_WEB_ADMIN_INVITE_CODE（管理员注册码），\
+                 也可用 --invite-code / --admin-invite-code（会出现在 ps 里，不推荐）"
+            );
+        };
+        if user_code == admin_code {
+            bail!("普通邀请码和管理员邀请码不能相同");
+        }
+        if user_code.chars().count() < 12 || admin_code.chars().count() < 12 {
+            bail!("邀请码至少 12 位，防止被猜中");
+        }
     }
-    let state = Arc::new(state::WebState::new(config, public, password));
+    let state = Arc::new(state::WebState::new(config, public, (invite_user, invite_admin)));
     let router = Router::new()
         .route(
             "/",
@@ -52,6 +76,12 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
         .route("/api/auth/register", post(routes_auth::post_register))
         .route("/api/auth/login", post(routes_auth::post_login))
         .route("/api/auth/logout", post(routes_auth::post_logout))
+        .route("/api/auth/password", post(routes_auth::post_password))
+        .route("/api/admin/users", get(routes_admin::list_users))
+        .route("/api/admin/users/{name}", axum::routing::delete(routes_admin::delete_user))
+        .route("/api/admin/users/{name}/quota", post(routes_admin::post_quota))
+        .route("/api/admin/users/{name}/role", post(routes_admin::post_role))
+        .route("/api/admin/users/{name}/password", post(routes_admin::post_password))
         .route("/api/state", get(routes_core::get_state))
         .route("/api/login", post(routes_core::post_login))
         .route("/api/logout", post(routes_core::post_logout))
@@ -92,7 +122,10 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
     if open {
         open_browser(&url);
     }
-    axum::serve(listener, router)
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
         .await
         .context("web 服务异常退出")
 }

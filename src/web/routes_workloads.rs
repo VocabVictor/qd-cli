@@ -1,7 +1,9 @@
 use crate::*;
+use crate::web::roles::{CurrentUser, require_admin, require_owner};
 use crate::web::state::*;
 
 use axum::{
+    Extension,
     Json,
     extract::{Query, State},
 };
@@ -97,15 +99,26 @@ pub(crate) async fn get_idle(
     reply(json!({"listCount": groups.len(), "groups": groups, "failedSpaces": failed_spaces}))
 }
 
-async fn resolve_terminal_url(
-    api: &ApiClient,
-    query: &HashMap<String, String>,
-) -> Result<String, WebError> {
+/// 普通用户只能进自己提交的作业；开发机没有归属记录，只给管理员。
+/// 在拿平台客户端之前调用，保证无权限时稳定返回 403 而不是平台登录相关的错误。
+fn authorize_terminal(user: &CurrentUser, query: &HashMap<String, String>) -> Result<(), WebError> {
     let id = query
         .get("id")
         .filter(|value| !value.is_empty())
         .ok_or_else(|| WebError::bad_request("缺少 id"))?;
     validate_id(id, "ID")?;
+    match query.get("kind").map(String::as_str) {
+        Some("job") => require_owner(user, id),
+        Some("dev") => require_admin(user),
+        _ => Err(WebError::bad_request("kind 只接受 job 或 dev")),
+    }
+}
+
+async fn resolve_terminal_url(
+    api: &ApiClient,
+    query: &HashMap<String, String>,
+) -> Result<String, WebError> {
+    let id = query.get("id").map(String::as_str).unwrap_or_default();
     let url = match query.get("kind").map(String::as_str) {
         Some("job") => {
             let instance = query_u64(query, "instance", 0, 0, 64)? as usize;
@@ -119,15 +132,17 @@ async fn resolve_terminal_url(
 
 pub(crate) async fn get_terminal_url(
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     Query(query): Query<HashMap<String, String>>,
 ) -> WebResult {
+    authorize_terminal(&user, &query)?;
     let api = state
         .api_for(query.get("space").map(String::as_str))
         .await?;
     let url = resolve_terminal_url(&api, &query).await?;
-    // 记录真实上游，并把地址换成 qd 自己的同源代理路径，
+    // 记录这个用户被授权的上游与 pod，并把地址换成 qd 自己的同源代理路径，
     // 这样 iframe 不受自签证书与浏览器代理影响。
-    super::proxy::remember_upstream(&state, &url).await;
+    super::proxy::grant_terminal(&state, &user.name, &url).await;
     let local = reqwest::Url::parse(&url)
         .ok()
         .map(|parsed| match parsed.query() {
@@ -141,11 +156,9 @@ pub(crate) async fn get_terminal_url(
 /// 一次性远程命令：连平台网页终端执行并捕获输出（等价 job/dev exec）。
 pub(crate) async fn post_exec(
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     Json(body): Json<Value>,
 ) -> WebResult {
-    let api = state
-        .api_for(body.get("space").and_then(Value::as_str))
-        .await?;
     let command = body
         .get("command")
         .and_then(Value::as_array)
@@ -168,6 +181,10 @@ pub(crate) async fn post_exec(
         .and_then(Value::as_u64)
         .unwrap_or(110)
         .clamp(5, 3600);
+    authorize_terminal(&user, &query)?;
+    let api = state
+        .api_for(body.get("space").and_then(Value::as_str))
+        .await?;
     let url = resolve_terminal_url(&api, &query).await?;
     let mut websocket = connect_web_terminal(&api, &url).await?;
     let outcome = tokio::time::timeout(

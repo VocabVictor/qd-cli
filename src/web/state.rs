@@ -10,6 +10,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+#[derive(Clone, Debug)]
+pub(crate) struct TerminalGrant {
+    /// 上游是否 https/wss（真实平台是；本地模拟平台是 http/ws）。
+    pub(crate) secure: bool,
+    pub(crate) authority: String,
+    pub(crate) ws_prefix: Option<String>,
+}
+
 #[derive(Clone)]
 pub(crate) struct SpaceInfo {
     pub(crate) id: String,
@@ -21,27 +29,32 @@ pub(crate) struct WebState {
     pub(crate) api: tokio::sync::RwLock<Option<ApiClient>>,
     /// 用户可见空间列表缓存（登录/登出时清空）。
     pub(crate) spaces: tokio::sync::RwLock<Option<Vec<SpaceInfo>>>,
-    /// 终端上游 host:port，由 /api/terminal-url 解析时写入，供反向代理使用。
-    pub(crate) terminal_upstream: tokio::sync::RwLock<Option<String>>,
+    /// 用户名 -> 最近一次解析出的终端授权（上游 host:port + 该 pod 的 /ws 路径前缀）。
+    /// 反向代理只按这里的记录转发，避免普通用户靠拼路径连到别人的 pod。
+    pub(crate) terminal_grants: tokio::sync::RwLock<HashMap<String, TerminalGrant>>,
     /// 绑定非回环地址时为 true，跳过 Origin 同源检查，改用本机账号 session 把关。
     pub(crate) public: bool,
-    /// 公开绑定时必须设置，当注册邀请码用；本机回环绑定不校验。
-    pub(crate) web_password: Option<String>,
+    /// 公开绑定时必须设置：普通邀请码注册普通用户（配额 0），管理员邀请码注册管理员。
+    pub(crate) invite_user: Option<String>,
+    pub(crate) invite_admin: Option<String>,
     /// token -> (username, 过期时间)。重启进程即丢失，不持久化。
     local_sessions: tokio::sync::RwLock<HashMap<String, (String, Instant)>>,
+    pub(crate) auth_limiter: super::rate_limit::AuthLimiter,
 }
 
 impl WebState {
-    pub(crate) fn new(config: Config, public: bool, web_password: Option<String>) -> Self {
+    pub(crate) fn new(config: Config, public: bool, invites: (Option<String>, Option<String>)) -> Self {
         let api = ApiClient::from_saved_session(config.clone()).ok();
         Self {
             config: tokio::sync::RwLock::new(config),
             api: tokio::sync::RwLock::new(api),
             spaces: tokio::sync::RwLock::new(None),
-            terminal_upstream: tokio::sync::RwLock::new(None),
+            terminal_grants: tokio::sync::RwLock::new(HashMap::new()),
             public,
-            web_password,
+            invite_user: invites.0,
+            invite_admin: invites.1,
             local_sessions: tokio::sync::RwLock::new(HashMap::new()),
+            auth_limiter: Default::default(),
         }
     }
 
@@ -59,6 +72,15 @@ impl WebState {
 
     pub(crate) async fn drop_session(&self, token: &str) {
         self.local_sessions.write().await.remove(token);
+    }
+
+    /// 删除/降级账号后踢掉该用户的全部 session 和终端授权。
+    pub(crate) async fn drop_user_sessions(&self, username: &str) {
+        self.local_sessions
+            .write()
+            .await
+            .retain(|_, (owner, _)| !owner.eq_ignore_ascii_case(username));
+        self.terminal_grants.write().await.remove(username);
     }
 
     pub(crate) async fn config(&self) -> Config {
@@ -158,6 +180,20 @@ impl WebError {
         }
     }
 
+    pub(crate) fn too_many_requests(retry_after_secs: u64) -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            message: format!("失败次数过多，请 {} 分钟后再试", retry_after_secs.div_ceil(60)),
+        }
+    }
+
+    pub(crate) fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+        }
+    }
+
     pub(crate) fn unauthorized_message(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::UNAUTHORIZED,
@@ -238,38 +274,4 @@ pub(crate) async fn origin_guard(
     next.run(request).await
 }
 
-pub(crate) fn query_u64(
-    query: &std::collections::HashMap<String, String>,
-    key: &str,
-    default: u64,
-    min: u64,
-    max: u64,
-) -> Result<u64, WebError> {
-    let Some(value) = query.get(key).filter(|value| !value.is_empty()) else {
-        return Ok(default);
-    };
-    let parsed: u64 = value
-        .parse()
-        .map_err(|_| WebError::bad_request(format!("{key} 必须是整数")))?;
-    if parsed < min || parsed > max {
-        return Err(WebError::bad_request(format!(
-            "{key} 必须在 {min}..={max} 范围内"
-        )));
-    }
-    Ok(parsed)
-}
-
-pub(crate) fn query_scope(
-    query: &std::collections::HashMap<String, String>,
-) -> Result<String, WebError> {
-    let scope = query
-        .get("scope")
-        .filter(|value| !value.is_empty())
-        .map(String::as_str)
-        .unwrap_or("mine")
-        .to_ascii_lowercase();
-    if !matches!(scope.as_str(), "mine" | "shared" | "public" | "all") {
-        return Err(WebError::bad_request("scope 只接受 mine、shared、public 或 all"));
-    }
-    Ok(scope)
-}
+pub(crate) use super::query::{query_scope, query_u64};

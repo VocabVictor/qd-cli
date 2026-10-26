@@ -1,15 +1,20 @@
 use crate::*;
+use crate::web::ownership::{self, JobRecord};
+use crate::web::quota;
+use crate::web::roles::{CurrentUser, require_owner};
 use crate::web::state::*;
 
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, Query, State},
 };
 use std::{collections::HashMap, sync::Arc};
 
 fn space_of(query: &HashMap<String, String>) -> Option<&str> {
+    // 前端历史上两种参数名都用过（space / spaceId），都认
     query
         .get("space")
+        .or_else(|| query.get("spaceId"))
         .map(String::as_str)
         .filter(|value| !value.is_empty())
 }
@@ -56,6 +61,15 @@ pub(crate) async fn list_jobs(
                 }
             }
             Err(_) => failed_spaces.push(space.name.clone()),
+        }
+    }
+    // 标注提交者，前端据此决定"我的作业"能不能取消/删除/进终端。
+    let owners: HashMap<String, String> = ownership::owners()?.into_iter().collect();
+    for job in &mut jobs {
+        let id = job.get("jobId").or_else(|| job.get("id")).and_then(value_string);
+        if let (Some(id), Some(object)) = (id, job.as_object_mut()) {
+            let owner = owners.get(&id).cloned().map(Value::String).unwrap_or(Value::Null);
+            object.insert("qdOwner".to_owned(), owner);
         }
     }
     jobs.sort_by(|left, right| {
@@ -112,24 +126,55 @@ pub(crate) async fn get_job_metrics(
 
 pub(crate) async fn post_job_submit(
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     Json(body): Json<Value>,
 ) -> WebResult {
     if !body.is_object() {
         return Err(WebError::bad_request("任务定义必须是 JSON 对象"));
     }
+    let config = state.config().await;
     // spaceid 请求头要与 body 里的 spaceId 一致，平台按头路由
-    let space = scalar_string(&body, "spaceId");
-    let api = state.api_for(space.as_deref()).await?;
-    reply(submit_job(&api, &state.config().await, body).await?)
+    let space = scalar_string(&body, "spaceId")
+        .or_else(|| config.space_id.clone())
+        .ok_or_else(|| WebError::bad_request("缺少 spaceId"))?;
+    let group = scalar_string(&body, "rsgroupId").unwrap_or_default();
+    let gpu = quota::job_gpu(&body);
+    if !user.is_admin() {
+        let name = user.name.clone();
+        let account = tokio::task::spawn_blocking(move || crate::web::accounts::get(&name))
+            .await
+            .map_err(|_| WebError::bad_request("后台任务异常退出"))??
+            .ok_or_else(WebError::unauthorized)?;
+        let usage = ownership::current_usage(&state, &user.name).await?;
+        quota::check(&account.quota, &usage, &space, &group, gpu).map_err(WebError::forbidden)?;
+    }
+    let api = state.api_for(Some(&space)).await?;
+    let result = submit_job(&api, &config, body).await?;
+    let job_id = result
+        .pointer("/data/jobId")
+        .and_then(value_string)
+        .ok_or_else(|| {
+            WebError::bad_request(
+                "作业已提交，但平台没返回 jobId，无法记录归属和配额；请管理员在平台上核对并处理这个作业",
+            )
+        })?;
+    ownership::record(JobRecord {
+        job_id,
+        user: user.name.clone(),
+        space_id: space,
+        rsgroup_id: group,
+        gpu,
+        created_at: (unix_millis() / 1000) as i64,
+        released: false,
+    })?;
+    reply(result)
 }
 
 pub(crate) async fn post_bulk(
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     Json(body): Json<Value>,
 ) -> WebResult {
-    let api = state
-        .api_for(body.get("spaceId").and_then(Value::as_str))
-        .await?;
     let action = match body.get("action").and_then(Value::as_str) {
         Some("job-cancel") => BulkAction::JobCancel,
         Some("job-delete") => BulkAction::JobDelete,
@@ -151,7 +196,20 @@ pub(crate) async fn post_bulk(
         .ok_or_else(|| WebError::bad_request("缺少 ids"))?;
     for id in &ids {
         validate_id(id, "ID")?;
+        require_owner(&user, id)?;
     }
+    let api = state
+        .api_for(body.get("spaceId").and_then(Value::as_str))
+        .await?;
+    let deleting = matches!(action, BulkAction::JobDelete);
     let results = bulk_action(&api, ids, state.config().await.concurrency, action).await;
+    if deleting {
+        let deleted: Vec<String> = results
+            .iter()
+            .filter(|r| r.get("ok").and_then(Value::as_bool) == Some(true))
+            .filter_map(|r| r.get("id").and_then(value_string))
+            .collect();
+        ownership::mark_released(&deleted)?;
+    }
     reply(Value::Array(results))
 }

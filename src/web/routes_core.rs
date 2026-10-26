@@ -1,7 +1,9 @@
 use crate::*;
 use crate::web::state::*;
 
-use axum::{Json, extract::State};
+use crate::web::roles::{CurrentUser, require_admin};
+
+use axum::{Extension, Json, extract::State};
 use std::sync::Arc;
 
 pub(crate) async fn get_state(State(state): State<Arc<WebState>>) -> WebResult {
@@ -91,11 +93,9 @@ pub(crate) async fn post_logout(State(state): State<Arc<WebState>>) -> WebResult
 /// 通用平台 API 透传（等价 `qd api METHOD PATH`）。
 pub(crate) async fn post_call(
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     Json(body): Json<Value>,
 ) -> WebResult {
-    let api = state
-        .api_for(body.get("spaceId").and_then(Value::as_str))
-        .await?;
     let method = body
         .get("method")
         .and_then(Value::as_str)
@@ -103,6 +103,13 @@ pub(crate) async fn post_call(
         .to_ascii_uppercase();
     let method = Method::from_bytes(method.as_bytes())
         .map_err(|_| WebError::bad_request("无效的 HTTP 方法"))?;
+    // 透传接口能调平台任意 API；普通用户只放行只读 GET，写操作必须走带权限检查的专用接口。
+    if method != Method::GET {
+        require_admin(&user)?;
+    }
+    let api = state
+        .api_for(body.get("spaceId").and_then(Value::as_str))
+        .await?;
     let service = Service::parse(
         body.get("service")
             .and_then(Value::as_str)

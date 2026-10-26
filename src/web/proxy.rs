@@ -2,12 +2,13 @@
 //! 浏览器无法在 iframe 里加载。这里由 qd 自己转发页面、静态资源和 WebSocket，
 //! 让终端与 qd web 同源（http://127.0.0.1:port），既没有证书问题也不受浏览器代理影响。
 
-use super::state::WebState;
+use super::roles::CurrentUser;
+use super::state::{TerminalGrant, WebState};
 
 use axum::{
     body::Body,
     extract::{
-        State,
+        Extension, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{StatusCode, Uri, header},
@@ -16,21 +17,37 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 
-/// 记录终端上游 `host:port`（由 /api/terminal-url 解析出真实地址时写入）。
-pub(crate) async fn remember_upstream(state: &WebState, terminal_url: &str) {
-    if let Ok(url) = reqwest::Url::parse(terminal_url)
-        && let Some(host) = url.host_str()
-    {
-        let authority = match url.port() {
-            Some(port) => format!("{host}:{port}"),
-            None => host.to_owned(),
-        };
-        *state.terminal_upstream.write().await = Some(authority);
-    }
+/// 记录某个用户被授权的终端：上游 host:port，以及该 pod 的 WebSocket 路径前缀
+/// （/ws/{namespace}/{pod}/{container}）。代理只按调用者自己的授权转发。
+pub(crate) async fn grant_terminal(state: &WebState, user: &str, terminal_url: &str) {
+    let Ok(url) = reqwest::Url::parse(terminal_url) else { return };
+    let Some(host) = url.host_str() else { return };
+    let authority = match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    };
+    let param = |name: &str| {
+        url.query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+    };
+    let ws_prefix = match (param("namespace"), param("pod"), param("container")) {
+        (Some(ns), Some(pod), Some(container)) => Some(format!("/ws/{ns}/{pod}/{container}/")),
+        _ => None,
+    };
+    state
+        .terminal_grants
+        .write()
+        .await
+        .insert(user.to_owned(), TerminalGrant { secure: url.scheme() != "http", authority, ws_prefix });
 }
 
-async fn upstream_of(state: &WebState) -> Option<String> {
-    state.terminal_upstream.read().await.clone()
+async fn grant_of(state: &WebState, user: &str) -> Option<TerminalGrant> {
+    state.terminal_grants.read().await.get(user).cloned()
+}
+
+fn forbid(msg: &str) -> Response {
+    (StatusCode::FORBIDDEN, msg.to_owned()).into_response()
 }
 
 fn deny(msg: &str) -> Response {
@@ -38,15 +55,19 @@ fn deny(msg: &str) -> Response {
 }
 
 /// 转发终端页面与静态资源（GET）。
-pub(crate) async fn proxy_http(State(state): State<Arc<WebState>>, uri: Uri) -> Response {
-    let Some(authority) = upstream_of(&state).await else {
+pub(crate) async fn proxy_http(
+    State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
+    uri: Uri,
+) -> Response {
+    let Some(TerminalGrant { authority, secure, .. }) = grant_of(&state, &user.name).await else {
         return deny("尚未解析终端地址，请先在页面上打开某个作业的终端");
     };
     let path_and_query = uri
         .path_and_query()
         .map(|value| value.as_str())
         .unwrap_or("/");
-    let target = format!("https://{authority}{path_and_query}");
+    let target = format!("{}://{authority}{path_and_query}", if secure { "https" } else { "http" });
 
     let config = state.config().await;
     let client = match crate::api::http_client_builder(&config).and_then(|builder| {
@@ -103,9 +124,10 @@ pub(crate) async fn proxy_http(State(state): State<Arc<WebState>>, uri: Uri) -> 
 pub(crate) async fn proxy_ws(
     upgrade: WebSocketUpgrade,
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     uri: Uri,
 ) -> Response {
-    let Some(authority) = upstream_of(&state).await else {
+    let Some(grant) = grant_of(&state, &user.name).await else {
         return deny("尚未解析终端地址");
     };
     let path_and_query = uri
@@ -113,7 +135,19 @@ pub(crate) async fn proxy_ws(
         .map(|value| value.as_str())
         .unwrap_or("/")
         .to_owned();
-    let target = format!("wss://{authority}{path_and_query}");
+    // 普通用户只能连到刚被授权的那个 pod；拼别的 namespace/pod 路径直接拒绝。
+    if !user.is_admin() {
+        let allowed = grant
+            .ws_prefix
+            .as_deref()
+            .is_some_and(|prefix| uri.path().starts_with(prefix) && !uri.path().contains(".."));
+        if !allowed {
+            return forbid("只能连接自己作业的终端");
+        }
+    }
+    let authority = grant.authority;
+    let ws_scheme = if grant.secure { "wss" } else { "ws" };
+    let target = format!("{ws_scheme}://{authority}{path_and_query}");
     let insecure = state.config().await.insecure_tls;
     upgrade.on_upgrade(move |socket| pump(socket, target, insecure))
 }
