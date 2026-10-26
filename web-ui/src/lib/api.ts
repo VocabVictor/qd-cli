@@ -9,6 +9,14 @@ export interface AppState {
   insecureTls?: boolean;
 }
 
+/** 本机 qd web 账号（谁能打开这台机器上的控制面板），和上面的平台账号无关。 */
+export interface LocalAuthState {
+  required: boolean;
+  hasAccount: boolean;
+  loggedIn: boolean;
+  username?: string;
+}
+
 async function qfetch<T = any>(url: string, opts?: RequestInit): Promise<T> {
   const r = await fetch(url, opts);
   let j: any = null;
@@ -43,6 +51,13 @@ export const api = {
   templates: () => qget("/api/templates"),
   saveTemplate: (name: string, kind: "job" | "dev", payload: any) => qpost("/api/templates", { name, kind, payload }),
   deleteTemplate: (name: string) => qfetch("/api/templates/" + encodeURIComponent(name), { method: "DELETE" }),
+  localAuth: {
+    state: () => qget<LocalAuthState>("/api/auth/state"),
+    login: (username: string, password: string) => qpost("/api/auth/login", { username, password }),
+    register: (username: string, password: string, inviteCode: string) =>
+      qpost("/api/auth/register", { username, password, inviteCode }),
+    logout: () => qpost("/api/auth/logout"),
+  },
 };
 
 // helpers

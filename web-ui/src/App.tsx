@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { Home, Rocket, Boxes, Server, Package, Settings as Cog, LogOut, Zap, Gauge, Upload } from "lucide-react";
-import { api, AppState } from "./lib/api";
+import { api, AppState, LocalAuthState } from "./lib/api";
 import { ToastHost, Spinner } from "./components/ui";
+import { AuthGate } from "./pages/AuthGate";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { Jobs } from "./pages/Jobs";
@@ -31,11 +32,24 @@ const PAGES: Record<string, (p: { state: AppState }) => JSX.Element> = {
 
 export function App() {
   const [state, setState] = useState<AppState | null>(null);
+  const [localAuth, setLocalAuth] = useState<LocalAuthState | null>(null);
   const [view, setView] = useState(location.hash.slice(1) || "overview");
   const [booting, setBooting] = useState(true);
 
   const reload = () => api.state().then(setState).catch(() => setState({ loggedIn: false })).finally(() => setBooting(false));
-  useEffect(() => { reload(); }, []);
+
+  // 本机账号墙（只在 --host 公开绑定时存在）要先过，再轮到上面的平台登录。
+  const bootstrap = () => {
+    setBooting(true);
+    api.localAuth.state()
+      .then((la) => {
+        setLocalAuth(la);
+        if (la.required && !la.loggedIn) { setBooting(false); return; }
+        return reload();
+      })
+      .catch(() => { setLocalAuth({ required: false, hasAccount: true, loggedIn: true }); return reload(); });
+  };
+  useEffect(() => { bootstrap(); }, []);
   useEffect(() => {
     const onHash = () => setView(location.hash.slice(1) || "overview");
     const onUnauth = () => setState((s) => (s ? { ...s, loggedIn: false } : s));
@@ -52,6 +66,8 @@ export function App() {
       <div className="h-full w-1 fixed top-0 left-0 right-0 z-10" style={{ height: 3, width: "100%", background: "#1070FE" }} />
       {booting ? (
         <div className="h-full grid place-items-center"><Spinner label="连接中…" /></div>
+      ) : localAuth?.required && !localAuth.loggedIn ? (
+        <AuthGate hasAccount={localAuth.hasAccount} onAuthed={bootstrap} />
       ) : !state?.loggedIn ? (
         <Login onLogin={reload} />
       ) : (

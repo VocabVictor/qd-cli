@@ -1,6 +1,8 @@
 use crate::*;
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
     Json,
@@ -21,12 +23,16 @@ pub(crate) struct WebState {
     pub(crate) spaces: tokio::sync::RwLock<Option<Vec<SpaceInfo>>>,
     /// 终端上游 host:port，由 /api/terminal-url 解析时写入，供反向代理使用。
     pub(crate) terminal_upstream: tokio::sync::RwLock<Option<String>>,
-    /// 绑定非回环地址时为 true，跳过 Origin 同源检查。
+    /// 绑定非回环地址时为 true，跳过 Origin 同源检查，改用本机账号 session 把关。
     pub(crate) public: bool,
+    /// 公开绑定时必须设置，当注册邀请码用；本机回环绑定不校验。
+    pub(crate) web_password: Option<String>,
+    /// token -> (username, 过期时间)。重启进程即丢失，不持久化。
+    local_sessions: tokio::sync::RwLock<HashMap<String, (String, Instant)>>,
 }
 
 impl WebState {
-    pub(crate) fn new(config: Config, public: bool) -> Self {
+    pub(crate) fn new(config: Config, public: bool, web_password: Option<String>) -> Self {
         let api = ApiClient::from_saved_session(config.clone()).ok();
         Self {
             config: tokio::sync::RwLock::new(config),
@@ -34,7 +40,25 @@ impl WebState {
             spaces: tokio::sync::RwLock::new(None),
             terminal_upstream: tokio::sync::RwLock::new(None),
             public,
+            web_password,
+            local_sessions: tokio::sync::RwLock::new(HashMap::new()),
         }
+    }
+
+    /// 底层存取给 local_session.rs 用：这里才摸得到私有的 local_sessions 字段。
+    pub(crate) async fn insert_session(&self, token: String, username: String, expires: Instant) {
+        self.local_sessions.write().await.insert(token, (username, expires));
+    }
+
+    /// token 有效且未过期则返回对应用户名；顺手清掉已过期的记录。
+    pub(crate) async fn lookup_session(&self, token: &str) -> Option<String> {
+        let mut sessions = self.local_sessions.write().await;
+        sessions.retain(|_, (_, expires)| *expires > Instant::now());
+        sessions.get(token).map(|(username, _)| username.clone())
+    }
+
+    pub(crate) async fn drop_session(&self, token: &str) {
+        self.local_sessions.write().await.remove(token);
     }
 
     pub(crate) async fn config(&self) -> Config {
@@ -130,6 +154,13 @@ impl WebError {
     pub(crate) fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn unauthorized_message(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
             message: message.into(),
         }
     }

@@ -61,7 +61,7 @@ pub(crate) const HELP: &str = r#"qd - GPU 平台的低内存、高并发命令�
   qd image list [--source current|mine] [--keywords TEXT] [--page N] [--size N]
   qd image repositories [--page N] [--size N]
 
-  qd web [--host ADDR] [--port N] [--open]
+  qd web [--host ADDR] [--port N] [--password PASS] [--open]
   qd api METHOD PATH [--service core|auth|tool|absolute] [--file body.json]
   qd bench PATH [--service core|auth|tool|absolute] [--file query.json]
                    [--requests N] [--warmup N] [--concurrency N]
