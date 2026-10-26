@@ -1,5 +1,7 @@
 use crate::*;
 
+use std::sync::Arc;
+
 use axum::{
     Json,
     http::StatusCode,
@@ -19,16 +21,19 @@ pub(crate) struct WebState {
     pub(crate) spaces: tokio::sync::RwLock<Option<Vec<SpaceInfo>>>,
     /// 终端上游 host:port，由 /api/terminal-url 解析时写入，供反向代理使用。
     pub(crate) terminal_upstream: tokio::sync::RwLock<Option<String>>,
+    /// 绑定非回环地址时为 true，跳过 Origin 同源检查。
+    pub(crate) public: bool,
 }
 
 impl WebState {
-    pub(crate) fn new(config: Config) -> Self {
+    pub(crate) fn new(config: Config, public: bool) -> Self {
         let api = ApiClient::from_saved_session(config.clone()).ok();
         Self {
             config: tokio::sync::RwLock::new(config),
             api: tokio::sync::RwLock::new(api),
             spaces: tokio::sync::RwLock::new(None),
             terminal_upstream: tokio::sync::RwLock::new(None),
+            public,
         }
     }
 
@@ -174,9 +179,13 @@ fn is_local_origin(origin: &str) -> bool {
 /// Web 服务只绑定回环地址。写操作还必须来自其本机页面，防止跨站请求触发
 /// 提交、删除或远程执行；只读请求保留给本机排障工具使用。
 pub(crate) async fn origin_guard(
+    axum::extract::State(state): axum::extract::State<Arc<WebState>>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    if state.public {
+        return next.run(request).await;
+    }
     let origin = request
         .headers()
         .get(axum::http::header::ORIGIN)

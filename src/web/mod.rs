@@ -18,17 +18,13 @@ const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.html"));
 
 pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool) -> Result<()> {
     let port = option_u64(args, "--port", 7717, 1, 65535)? as u16;
-    if let Some(host) = args.take_option("--host")?
-        && host != "127.0.0.1"
-    {
-        bail!("为了保护本机登录态，qd web 仅允许绑定 127.0.0.1");
-    }
-    let host = "127.0.0.1".to_owned();
+    let host = args.take_option("--host")?.unwrap_or_else(|| "127.0.0.1".to_owned());
     let open = args.take_flag("--open");
     args.ensure_empty()?;
     config.require_base_url()?;
 
-    let state = Arc::new(state::WebState::new(config));
+    let public = host != "127.0.0.1";
+    let state = Arc::new(state::WebState::new(config, public));
     let router = Router::new()
         .route(
             "/",
@@ -61,7 +57,7 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
         .route("/terminal", get(proxy::proxy_http))
         .route("/static/{*path}", get(proxy::proxy_http))
         .route("/ws/{*path}", get(proxy::proxy_ws))
-        .layer(middleware::from_fn(state::origin_guard))
+        .layer(middleware::from_fn_with_state(state.clone(), state::origin_guard))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind((host.as_str(), port))
