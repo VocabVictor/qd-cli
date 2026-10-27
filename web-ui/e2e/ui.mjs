@@ -140,7 +140,30 @@ try {
     await B.page.locator(".segmented button", { hasText: "CPU" }).first().click();
     check("切到 CPU 后可以提交", await submit.isEnabled());
     await shot(B.page, "03-submit-no-quota.png");
+    check("成员看不到「存为模板」", !(await B.page.getByRole("button", { name: "存为模板" }).isVisible()));
     await B.page.keyboard.press("Escape");
+  });
+
+  await step("管理员保存、套用、删除模板", async () => {
+    await A.page.getByRole("button", { name: "提交作业" }).first().click();
+    await A.page.waitForSelector("#cf-name");
+    await A.page.fill("#cf-name", "tpl-source");
+    await A.page.getByRole("button", { name: "存为模板" }).click();
+    await A.page.fill("input[aria-label='模板名']", "a100-base");
+    await A.page.keyboard.press("Enter");
+    check("模板保存成功", await waitToast(A.page, /已保存模板 a100-base/));
+    const chip = A.page.locator("[aria-label='作业模板'] [role=listitem]", { hasText: "a100-base" });
+    check("模板出现在模板栏", await chip.isVisible());
+    await shot(A.page, "03-template.png");
+    await A.page.fill("#cf-name", "changed");
+    await chip.getByRole("button", { name: "a100-base", exact: true }).click();
+    check("套用模板恢复表单", (await A.page.inputValue("#cf-name")) === "tpl-source");
+    A.page.once("dialog", (d) => d.accept());
+    await chip.hover();
+    await A.page.getByRole("button", { name: "删除模板 a100-base" }).click();
+    check("删除模板", await waitToast(A.page, /已删除模板 a100-base/));
+    check("模板栏随之消失", !(await A.page.getByRole("list", { name: "作业模板" }).isVisible()));
+    await A.page.keyboard.press("Escape");
   });
 
   // ---------- 4. 管理员分配配额 ----------

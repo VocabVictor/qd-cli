@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, ReactNode } from "react";
-import { Loader2, Save } from "lucide-react";
+import { Check, Loader2, Save, X } from "lucide-react";
 import { api, qpost, pcall, eachSpace, spacesOf, AppState, asList, field, getMe, isAdmin } from "../lib/api";
 import { Drawer } from "./Drawer";
 import { dropCache } from "../lib/cache";
@@ -53,6 +53,8 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
   const [loadingOpts, setLoadingOpts] = useState(true);
   const [templates, setTemplates] = useState<any[]>([]);
   const [tplName, setTplName] = useState("");
+  const [naming, setNaming] = useState(false);
+  const [applied, setApplied] = useState("");
 
   const reloadTemplates = () => api.templates().then((d) => setTemplates((d.templates || []).filter((t: any) => t.kind === kind))).catch(() => setTemplates([]));
   useEffect(() => { if (open) reloadTemplates(); }, [open, kind]); // eslint-disable-line
@@ -160,7 +162,13 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
   const saveTemplate = async () => {
     const n = tplName.trim();
     if (!n) return toast("先填模板名", true);
-    try { await api.saveTemplate(n, kind, payload); setTplName(""); await reloadTemplates(); toast("已保存模板 " + n); }
+    try { await api.saveTemplate(n, kind, payload); setTplName(""); setNaming(false); setApplied(n); await reloadTemplates(); toast("已保存模板 " + n); }
+    catch (e: any) { toast(e.message, true); }
+  };
+  const useTemplate = (t: any) => { applyPreset(t.payload); setApplied(t.name); toast("已套用模板 " + t.name); };
+  const dropTemplate = async (n: string) => {
+    if (!window.confirm(`删除模板「${n}」？`)) return;
+    try { await api.deleteTemplate(n); if (applied === n) setApplied(""); await reloadTemplates(); toast("已删除模板 " + n); }
     catch (e: any) { toast(e.message, true); }
   };
 
@@ -169,15 +177,6 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
 
   return (
     <Drawer open={open} onClose={onClose} title="提交作业" sub={groupLabel ? `资源组 ${groupLabel}` : undefined} width="max-w-2xl"
-      actions={templates.length > 0 && !loadingOpts ? (
-        <select className="field w-40 h-7 text-[12px]" value="" aria-label="套用模板" onChange={(e) => {
-          const t = templates.find((x) => x.name === e.target.value);
-          if (t) { applyPreset(t.payload); toast("已套用模板 " + t.name); }
-        }}>
-          <option value="">套用模板…</option>
-          {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-        </select>
-      ) : undefined}
       footer={!loadingOpts && (
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
@@ -199,18 +198,30 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
               <button aria-pressed={advanced} onClick={() => setAdvanced(true)}>JSON</button>
             </div>
             <div className="flex-1" />
-            <input className="field w-36 h-7 text-[12px]" placeholder="另存为模板名" aria-label="模板名" value={tplName} onChange={(e) => setTplName(e.target.value)} />
-            <button className="btn btn-ghost btn-mini" onClick={saveTemplate}><Save size={12} />存为模板</button>
-            {templates.length > 0 && (
-              <select className="field w-28 h-7 text-[12px]" value="" aria-label="删除模板" onChange={async (e) => {
-                const n = e.target.value; if (!n) return;
-                try { await api.deleteTemplate(n); await reloadTemplates(); toast("已删除模板 " + n); } catch (err: any) { toast(err.message, true); }
-              }}>
-                <option value="">删除模板…</option>
-                {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-              </select>
+            {naming ? (
+              <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); saveTemplate(); }}>
+                <input autoFocus className="field w-40 h-7 text-[12px]" placeholder="模板名" aria-label="模板名" value={tplName}
+                  onChange={(e) => setTplName(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setNaming(false)} />
+                <button type="submit" className="btn btn-pri btn-mini" aria-label="保存模板"><Check size={12} />保存</button>
+                <button type="button" className="btn btn-ghost btn-mini" aria-label="取消保存模板" onClick={() => setNaming(false)}><X size={12} /></button>
+              </form>
+            ) : isAdmin() && (
+              <button className="btn btn-ghost btn-mini" onClick={() => { setTplName(applied); setNaming(true); }}><Save size={12} />存为模板</button>
             )}
           </div>
+          {templates.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap px-4 py-2 border-b border-line-soft" role="list" aria-label="作业模板">
+              <span className="text-[11px] text-ink-faint mr-1">模板</span>
+              {templates.map((t) => (
+                <span key={t.name} role="listitem" className={"chip group pr-1 gap-0.5 " + (applied === t.name ? "chip-on" : "")}>
+                  <button className="max-w-[160px] truncate" title={`套用 ${t.name}`} onClick={() => useTemplate(t)}>{t.name}</button>
+                  {isAdmin() && <button aria-label={`删除模板 ${t.name}`} title="删除"
+                    className="grid place-items-center w-4 h-4 rounded text-ink-faint opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-line hover:text-danger"
+                    onClick={() => dropTemplate(t.name)}><X size={11} /></button>}
+                </span>
+              ))}
+            </div>
+          )}
 
           {advanced ? (
             <div className="p-5">
