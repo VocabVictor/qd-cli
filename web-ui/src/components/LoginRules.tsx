@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { Loader2, Save, LogOut } from "lucide-react";
+import { Loader2, Save, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
 import { api, BindKind, ListMode, LiveSession, LoginOverride, LoginPolicy } from "../lib/api";
-import { Card, Panel, Table, Th, Td, useToast } from "./ui";
+import { Card, Panel, Th, Td, useToast } from "./ui";
+import { ReactNode } from "react";
+
+/** 面板里的表格：不再套一层卡片。 */
+function TableBare({ head, children }: { head: ReactNode; children: ReactNode }) {
+  return <div className="overflow-x-auto"><table className="tbl"><thead><tr>{head}</tr></thead><tbody>{children}</tbody></table></div>;
+}
 
 const MODES: [LoginPolicy["sessionMode"], string, string][] = [
   ["kick", "踢掉旧会话", "新登录把其他地方的登录挤下线"],
@@ -75,11 +81,12 @@ export function GlobalRules({ onSaved }: { onSaved?: (p: LoginPolicy) => void })
     catch (e: any) { toast(e.message, true); } finally { setBusy(false); }
   };
   return (
-    <Card className="p-5" >
-      <div className="flex items-center mb-4">
+    <Card className="p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <span className="ico ico-teal"><ShieldCheck size={16} /></span>
         <div>
           <div className="text-[15px] font-semibold">成员登录限制（全体）</div>
-          <div className="text-[11px] text-ink-faint">所有成员的默认规则，管理员不受限；单个成员可以在下面的用户卡片里逐项覆盖。改完立即生效。</div>
+          <div className="text-[11px] text-ink-faint">所有成员的默认规则，管理员不受限；单个成员可以在「用户与配额」的卡片里逐项覆盖。改完立即生效。</div>
         </div>
         <div className="flex-1" />
         <button className="btn btn-pri" disabled={busy || !dirty} onClick={save} data-testid="save-policy">
@@ -107,21 +114,23 @@ export function LiveSessions({ me }: { me?: string }) {
     try { await api.admin.kick(s.id); toast(`${s.username} 已下线`); load(); } catch (e: any) { toast(e.message, true); }
   };
   return (
-    <Panel title="在线会话" meta={list ? `${list.length} 个` : undefined} action={<button className="btn btn-mini" onClick={load}>刷新</button>}>
-      <Table head={<><Th>用户</Th><Th>IP</Th><Th>浏览器</Th><Th>设备指纹</Th><Th>登录于</Th><Th>最近活动</Th><Th /></>}>
+    <Panel title="在线会话" meta={list ? `${list.length} 个会话，管理员可以把成员踢下线` : undefined} action={<button className="btn btn-mini" onClick={load}><RefreshCw size={12} />刷新</button>}>
+      <TableBare head={<><Th>用户</Th><Th>IP</Th><Th>浏览器</Th><Th>设备指纹</Th><Th>登录于</Th><Th>最近活动</Th><Th /></>}>
         {(list || []).map((s) => (
           <tr key={s.id} data-session={s.username}>
-            <Td><span className="font-medium">{s.username}</span>{me && s.username.toLowerCase() === me.toLowerCase() && <span className="tag tag-brand ml-1.5">我</span>}</Td>
+            <Td><span className="font-medium">{s.username}</span>{s.current ? <span className="tag tag-brand ml-1.5">当前会话</span> : me && s.username.toLowerCase() === me.toLowerCase() && <span className="tag tag-gray ml-1.5">我</span>}</Td>
             <Td><span className="font-mono text-[12px]">{s.ip}</span></Td>
             <Td><span title={s.agent}>{browserOf(s.agent)}</span></Td>
             <Td><span className="font-mono text-[12px] text-ink-soft select-all">{s.device || "—"}</span></Td>
             <Td className="text-ink-soft whitespace-nowrap">{new Date(s.createdAt * 1000).toLocaleString("zh-CN", { hour12: false })}</Td>
-            <Td className={s.online ? "" : "text-ink-faint"}>{ago(s.seenAt)}</Td>
-            <Td><button className="btn btn-mini btn-danger" onClick={() => kick(s)}><LogOut size={12} />踢下线</button></Td>
+            <Td><span className="inline-flex items-center gap-1.5"><i className={"w-1.5 h-1.5 rounded-full " + (s.online ? "bg-ok" : "bg-ink-faint/50")} /><span className={s.online ? "" : "text-ink-faint"}>{ago(s.seenAt)}</span></span></Td>
+            <Td className="text-right">{s.current
+              ? <span className="text-[11px] text-ink-faint">退出请用左下角</span>
+              : <button className="btn btn-mini btn-danger" onClick={() => kick(s)}><LogOut size={12} />踢下线</button>}</Td>
           </tr>
         ))}
-        {list && !list.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-ink-faint">没有在线会话</td></tr>}
-      </Table>
+        {list && !list.length && <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-faint">没有在线会话</td></tr>}
+      </TableBare>
     </Panel>
   );
 }
@@ -155,14 +164,14 @@ function ListRule({ label, hint, value, global, onChange }: {
     <div>
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-aux font-semibold w-20">{label}</span>
-        <select className="field w-36 h-7" aria-label={`${label}方式`} value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as ListMode })}>
+        <select className="field field-sm w-36" aria-label={`${label}方式`} value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as ListMode })}>
           {LIST_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         <span className="text-[11px] text-ink-faint truncate">全局：{global.length ? global.join("、") : "不限"}</span>
       </div>
       {value.mode !== "inherit" && (
         <>
-          <textarea className="field h-20 font-mono text-[12px] py-1.5" value={text} aria-label={`${label}条目`}
+          <textarea className="field h-20 font-mono text-[12px] py-1.5 bg-white" value={text} aria-label={`${label}条目`}
             onChange={(e) => setText(e.target.value)} onBlur={() => onChange({ ...value, items: lines(text) })} />
           <p className="text-[11px] text-ink-faint mt-1">
             {value.mode === "extend"

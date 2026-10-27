@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus } from "lucide-react";
+import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus, Square, Trash2 } from "lucide-react";
 import { api, AppState, spacesOf, fmtTime, field, canManageJob, getMe } from "../lib/api";
 import { useCached, dropCache } from "../lib/cache";
-import { PageBar, Spinner, Badge, Toolbar, StatusDot, Th, Pager, useToast } from "../components/ui";
+import { PageBar, Spinner, Badge, Toolbar, StatusDot, Th, Pager, Chips, Empty, useToast } from "../components/ui";
 import { Spark } from "../components/viz";
 import { Monitor, MonitorJob } from "../components/Monitor";
 import { CreateForm } from "../components/CreateForm";
@@ -108,19 +108,13 @@ export function Jobs({ state }: { state: AppState }) {
         </div>} />
 
       <Toolbar search={input} onSearch={setInput} placeholder="按作业名搜索">
-        <div className="flex items-center gap-0.5" role="tablist" aria-label="按状态筛选">
-          {FILTERS.map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilterKey(k)} className={"chip " + (filter === k ? "chip-on" : "")}>
-              {label}<span className="ml-1.5 text-ink-faint tabular-nums">{counts ? counts[k] : "…"}</span>
-            </button>
-          ))}
-        </div>
+        <Chips label="按状态筛选" items={FILTERS.map(([k, l]) => [k, l] as [string, string])} value={filter} onChange={setFilterKey} counts={counts || undefined} />
         <div className="flex-1" />
         {spaces.length > 1 && (
-          <select className="field w-32" aria-label="空间" value={space} onChange={(e) => setSpace(e.target.value)}>
+          <select className="field w-36" aria-label="空间" value={space} onChange={(e) => setSpace(e.target.value)}>
             <option value="">全部空间</option>{spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
         )}
-        <select className="field w-28" aria-label="范围" value={scope} onChange={(e) => setScope(e.target.value)}>
+        <select className="field w-32" aria-label="范围" value={scope} onChange={(e) => setScope(e.target.value)}>
           <option value="mine">我的项目</option><option value="shared">共享项目</option><option value="public">公开项目</option><option value="all">全部项目</option>
         </select>
       </Toolbar>
@@ -129,16 +123,16 @@ export function Jobs({ state }: { state: AppState }) {
       {loading ? <Spinner /> : (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-[13px] border-collapse">
+            <table className="tbl">
               <thead>
-                <tr className="text-left text-[12px] text-ink-faint border-b border-line bg-canvas/60">
+                <tr>
                   <Th>作业</Th>
                   <Th>状态</Th>
                   <Th num>GPU</Th>
                   <Th>近 10 分钟利用率</Th>
                   <Th>项目 / 空间</Th>
                   <Th>提交者</Th>
-                  <Th>创建时间 ↓</Th>
+                  <Th>创建时间</Th>
                   <Th><span className="sr-only">操作</span></Th>
                 </tr>
               </thead>
@@ -151,43 +145,49 @@ export function Jobs({ state }: { state: AppState }) {
                   const selfOwned = !!j.qdOwner && j.qdOwner.toLowerCase() === (me.username || "").toLowerCase();
                   const pts = util[id];
                   return (
-                    <tr key={id} className="border-b border-line-soft last:border-0 hover:bg-hover" data-job={id}>
-                      <td className="px-4 py-2 max-w-[320px]">
-                        <button className="flex items-center gap-2 min-w-0 text-left" onClick={() => setMon({ job: monitorJob(j) })}>
+                    <tr key={id} className="group" data-job={id}>
+                      <td className="px-4 py-3 max-w-[340px]">
+                        <button className="flex items-center gap-3 min-w-0 text-left" onClick={() => setMon({ job: monitorJob(j) })}>
                           <StatusDot status={st(j)} />
                           <span className="min-w-0">
-                            <span className="block font-medium truncate hover:text-brand">{field(j, ["jobName", "name"])}</span>
-                            <span className="block text-[11px] text-ink-faint tabular-nums">#{id}</span>
+                            <span className="block font-medium truncate group-hover:text-brand transition-colors">{field(j, ["jobName", "name"])}</span>
+                            <span className="block text-[11px] text-ink-faint font-mono">#{id}</span>
                           </span>
                         </button>
                       </td>
-                      <td className="px-4 py-2"><Badge text={field(j, ["statusName", "status"])} /></td>
-                      <td className="px-4 py-2 text-right tabular-nums">{gpuOf(j) || <span className="text-ink-faint">—</span>}</td>
-                      <td className="px-4 py-2">
-                        {run ? (pts ? <span className="flex items-center gap-2"><Spark points={pts} w={88} h={20} /><span className="text-[11px] text-ink-soft tabular-nums w-8">{pts.length ? Math.round(pts[pts.length - 1]) + "%" : "—"}</span></span>
+                      <td className="px-4 py-3"><Badge text={st(j) || field(j, ["statusName"])} /></td>
+                      <td className="px-4 py-3 text-right tabular-nums">{gpuOf(j) ? <span className="font-medium">{gpuOf(j)}</span> : <span className="text-ink-faint">—</span>}</td>
+                      <td className="px-4 py-3">
+                        {run ? (pts ? <span className="flex items-center gap-2"><Spark points={pts} w={88} h={22} color={gpuOf(j) ? "#4F46E5" : "#0F766E"} /><span className="text-[11px] text-ink-soft tabular-nums w-8">{pts.length ? Math.round(pts[pts.length - 1]) + "%" : "—"}</span></span>
                           : <Loader2 size={12} className="animate-spin text-ink-faint" />) : <span className="text-ink-faint">—</span>}
                       </td>
-                      <td className="px-4 py-2 max-w-[200px]">
+                      <td className="px-4 py-3 max-w-[200px]">
                         <span className="block truncate">{field(j, ["projectName", "projectId"], "—")}</span>
                         <span className="block text-[11px] text-ink-faint truncate">{j.spaceName || "—"}</span>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">{j.qdOwner ? (selfOwned ? <span className="tag tag-brand">我提交的</span> : j.qdOwner) : <span className="text-ink-faint">—</span>}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-ink-soft tabular-nums">{fmtTime(j.createTime)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-right">
+                      <td className="px-4 py-3 whitespace-nowrap">{j.qdOwner ? (selfOwned ? <span className="tag tag-brand">我提交的</span> : j.qdOwner) : <span className="text-ink-faint">—</span>}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-soft tabular-nums text-[12px]">{fmtTime(j.createTime)}</td>
+                      <td className="px-3 py-3 whitespace-nowrap text-right">
                         <span className="inline-flex items-center gap-1">
-                          {run && <button className="btn btn-ghost btn-mini" disabled={!mine} title={mine ? "打开网页终端" : NOT_MINE} onClick={() => setMon({ job: monitorJob(j), tab: "terminal" })}><TermIcon size={13} />终端</button>}
-                          <button className="btn btn-ghost btn-mini" title="按这个作业的配置新建" onClick={() => cloneJob(j)}><CopyPlus size={13} />复制</button>
-                          {active
-                            ? <button className="btn btn-ghost btn-mini" disabled={!mine} title={mine ? undefined : NOT_MINE} onClick={() => act("job-cancel", j)}>取消</button>
-                            : <button className="btn btn-ghost btn-mini btn-danger" disabled={!mine} title={mine ? undefined : NOT_MINE} onClick={() => act("job-delete", j)}>删除</button>}
+                          {run && (mine
+                            ? <button className="btn btn-mini" title="打开网页终端" onClick={() => setMon({ job: monitorJob(j), tab: "terminal" })}><TermIcon size={13} />终端</button>
+                            : <span title={NOT_MINE} className="cursor-not-allowed"><button className="btn btn-mini pointer-events-none" disabled><TermIcon size={13} />终端</button></span>)}
+                          <button className="btn btn-mini" title="按这个作业的配置新建一个" onClick={() => cloneJob(j)}><CopyPlus size={13} />复制</button>
+                          {mine
+                            ? (active
+                              ? <button className="btn btn-mini btn-danger" title="停止这个作业" onClick={() => act("job-cancel", j)}><Square size={11} />取消</button>
+                              : <button className="btn btn-mini btn-danger" title="删除作业记录" onClick={() => act("job-delete", j)}><Trash2 size={12} />删除</button>)
+                            : <span title={NOT_MINE} className="cursor-not-allowed"><button className="btn btn-mini pointer-events-none" disabled>{active ? <><Square size={11} />取消</> : <><Trash2 size={12} />删除</>}</button></span>}
                         </span>
                       </td>
                     </tr>
                   );
                 })}
                 {!shown.length && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-faint">
-                    {q || filter !== "all" ? "没有符合条件的作业，换个状态或清空搜索。" : <>还没有作业。<button className="text-brand hover:underline" onClick={() => setCreate(true)}>提交一个</button></>}
+                  <tr><td colSpan={8}>
+                    {q || filter !== "all"
+                      ? <Empty>没有符合条件的作业，换个状态或清空搜索。</Empty>
+                      : <Empty action={<button className="btn btn-pri btn-mini" onClick={() => setCreate(true)}><Plus size={13} />提交作业</button>}>还没有作业</Empty>}
                   </td></tr>
                 )}
               </tbody>

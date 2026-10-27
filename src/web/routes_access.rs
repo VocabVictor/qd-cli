@@ -10,7 +10,9 @@ use super::state::{WebError, WebResult, WebState, reply};
 use crate::*;
 
 use axum::Json;
+use super::local_session::{SESSION_COOKIE, cookie_value};
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use std::sync::Arc;
 
 fn parse_policy(body: Value) -> Result<LoginPolicy, WebError> {
@@ -54,7 +56,13 @@ pub(crate) async fn post_user_policy(Path(name): Path<String>, Json(body): Json<
 }
 
 /// GET /api/admin/sessions —— 所有在线会话（不含 token 本身）。
-pub(crate) async fn list_sessions(State(state): State<Arc<WebState>>) -> WebResult {
+async fn current_id(state: &WebState, headers: &HeaderMap) -> Option<String> {
+    let token = cookie_value(headers, SESSION_COOKIE)?;
+    state.sessions.id_of(token).await
+}
+
+pub(crate) async fn list_sessions(State(state): State<Arc<WebState>>, headers: HeaderMap) -> WebResult {
+    let current = current_id(&state, &headers).await;
     let sessions: Vec<Value> = state
         .sessions
         .list()
@@ -65,6 +73,7 @@ pub(crate) async fn list_sessions(State(state): State<Arc<WebState>>) -> WebResu
                 "id": s.id, "username": s.user, "ip": s.client.ip.to_string(),
                 "agent": s.client.agent, "device": s.client.device,
                 "createdAt": s.created, "seenAt": s.seen_unix, "online": s.online(),
+                "current": current.as_deref() == Some(s.id.as_str()),
             })
         })
         .collect();
@@ -72,7 +81,14 @@ pub(crate) async fn list_sessions(State(state): State<Arc<WebState>>) -> WebResu
 }
 
 /// DELETE /api/admin/sessions/{id} —— 把某个会话踢下线。
-pub(crate) async fn delete_session(State(state): State<Arc<WebState>>, Path(id): Path<String>) -> WebResult {
+pub(crate) async fn delete_session(
+    State(state): State<Arc<WebState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> WebResult {
+    if current_id(&state, &headers).await.as_deref() == Some(id.as_str()) {
+        return Err(WebError::bad_request("这是你当前的会话，要退出请点左下角的退出"));
+    }
     let user = state
         .sessions
         .revoke_id(&id, "已被管理员强制下线")

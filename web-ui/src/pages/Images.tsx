@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { api, AppState, pcall, spacesOf, field, isAdmin } from "../lib/api";
 import { useCached } from "../lib/cache";
-import { PageBar, Spinner, Table, Th, Td, Toolbar, Pager } from "../components/ui";
+import { PageBar, Spinner, Table, Th, Td, Toolbar, Pager, Chips, Empty } from "../components/ui";
 import { Drawer } from "../components/Drawer";
 
 const ACCESS: Record<number, string> = { 1: "私有", 2: "空间共享", 3: "公开" };
+const ACCESS_TAG: Record<number, string> = { 1: "tag-gray", 2: "tag-brand", 3: "tag-ok" };
 // 平台原生的 source 取值：current 全部可见，public 公开，shared 空间共享，mine 我创建的
 const SOURCES: [string, string][] = [["current", "全部"], ["public", "公开"], ["shared", "空间共享"], ["mine", "我创建的"]];
 const PAGE_SIZE = 20;
@@ -43,34 +44,28 @@ export function Images({ state }: { state: AppState }) {
       <PageBar title="镜像" hint={data ? `${total} 个镜像仓库` : undefined}
         right={<button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>} />
       <Toolbar search={input} onSearch={setInput} placeholder="按仓库名搜索">
-        <div className="flex items-center gap-0.5" role="tablist" aria-label="按可见性筛选">
-          {SOURCES.map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={source === k} onClick={() => setSource(k)} className={"chip " + (source === k ? "chip-on" : "")}>
-              {label}<span className="ml-1.5 text-ink-faint tabular-nums">{counts ? counts[k] : "…"}</span>
-            </button>
-          ))}
-        </div>
+        <Chips label="按可见性筛选" items={SOURCES} value={source} onChange={setSource} counts={counts || undefined} />
         <div className="flex-1" />
         {spaces.length > 1 && (
-          <select className="field w-32" aria-label="空间" value={space} onChange={(e) => setSpace(e.target.value)}>
+          <select className="field w-36" aria-label="空间" value={space} onChange={(e) => setSpace(e.target.value)}>
             <option value="">全部空间</option>{spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
       </Toolbar>
       {error && !data && <div className="card p-4 text-body mb-3">镜像列表读取失败：{error}。检查平台连接后点刷新。</div>}
       {loading ? <Spinner /> : <>
-        <Table head={<><Th>镜像仓库</Th><Th>空间</Th><Th num>镜像数</Th><Th>可见性</Th>{admin && <Th>创建人</Th>}<Th>创建时间 ↓</Th></>}>
+        <Table head={<><Th>镜像仓库</Th><Th>空间</Th><Th num>镜像数</Th><Th>可见性</Th>{admin && <Th>创建人</Th>}<Th>创建时间</Th></>}>
           {list.length ? list.map((r) => (
-            <tr key={`${r.spaceId}-${r.imageRepositoryId}`} className="hover:bg-hover cursor-pointer" data-repo={r.imageRepositoryId}
+            <tr key={`${r.spaceId}-${r.imageRepositoryId}`} className="cursor-pointer group" data-repo={r.imageRepositoryId}
               onClick={() => openRepo(Number(r.imageRepositoryId) || 0, r.spaceId, field(r, ["originalName", "repositoryName"]))}>
-              <Td clip><div className="font-medium">{field(r, ["originalName", "repositoryName"])}</div><div className="text-[11px] text-ink-faint truncate">{field(r, ["repositoryName"], "")}</div></Td>
+              <Td clip><div className="font-medium group-hover:text-brand transition-colors">{field(r, ["originalName", "repositoryName"])}</div><div className="text-[11px] text-ink-faint truncate">{field(r, ["repositoryName"], "")}</div></Td>
               <Td className="text-ink-soft">{r.spaceName || "—"}</Td>
               <Td num>{field(r, ["imageNum"], "—")}</Td>
-              <Td>{ACCESS[r.accessType] || r.accessType || "—"}</Td>
+              <Td><span className={"tag " + (ACCESS_TAG[r.accessType] || "tag-gray")}>{ACCESS[r.accessType] || r.accessType || "—"}</span></Td>
               {admin && <Td className="text-ink-soft">{field(r, ["displayName", "userName"], "—")}</Td>}
               <Td className="text-ink-soft tabular-nums whitespace-nowrap">{field(r, ["createTime"], "—")}</Td>
             </tr>
-          )) : <tr><td colSpan={admin ? 6 : 5} className="px-4 py-8 text-center text-ink-faint">没有符合条件的镜像仓库，换个可见性或清空搜索。</td></tr>}
+          )) : <tr><td colSpan={admin ? 6 : 5}><Empty>没有符合条件的镜像仓库，换个可见性或清空搜索。</Empty></td></tr>}
         </Table>
         <Pager page={page} size={PAGE_SIZE} total={total} count={list.length} busy={refreshing} onPage={setPage}
           note={<><span>点仓库查看镜像版本。</span>{skipped > 0 && <span className="text-warn">{skipped} 个空间读取失败未计入</span>}</>} />

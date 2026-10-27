@@ -35,7 +35,7 @@ export interface LoginOverride {
   exempt: boolean; sessionMode: LoginPolicy["sessionMode"] | null; bind: BindKind[] | null;
   ipAllow: { mode: ListMode; items: string[] }; deviceAllow: { mode: ListMode; items: string[] };
 }
-export interface LiveSession { id: string; username: string; ip: string; agent: string; device: string; createdAt: number; seenAt: number; online: boolean }
+export interface LiveSession { id: string; username: string; ip: string; agent: string; device: string; createdAt: number; seenAt: number; online: boolean; current?: boolean }
 
 export interface AdminUser { username: string; role: "admin" | "user"; quota: GpuLimits; usage: GpuLimits; createdAt: number; login?: LoginOverride | null; effective?: LoginPolicy | null }
 

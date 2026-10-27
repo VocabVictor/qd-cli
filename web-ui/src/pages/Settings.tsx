@@ -1,10 +1,16 @@
 import { useState } from "react";
 import { api, AppState, getMe, isAdmin } from "../lib/api";
-import { PageBar, Card, useToast } from "../components/ui";
+import { PageBar, Card, Avatar, useToast } from "../components/ui";
+import { KeyRound, Link2, SlidersHorizontal, HeartPulse } from "lucide-react";
+import { ReactNode } from "react";
+
+function Head({ icon: Icon, tone, title, extra }: { icon: typeof KeyRound; tone: string; title: string; extra?: ReactNode }) {
+  return <div className="flex items-center gap-3 mb-4"><span className={`ico ico-${tone}`}><Icon size={15} /></span><h2 className="text-h2">{title}</h2>{extra}</div>;
+}
 import { Meter } from "../components/viz";
 
 function Row({ k, v }: { k: string; v: any }) {
-  return <div className="flex gap-4 py-2 text-[13px] border-b border-line last:border-0"><span className="w-24 shrink-0 text-ink-faint">{k}</span><span className="min-w-0 break-all">{v}</span></div>;
+  return <div className="flex gap-4 py-2.5 text-[13px] border-b border-line-soft last:border-0"><span className="w-24 shrink-0 text-ink-faint">{k}</span><span className="min-w-0 break-all">{v}</span></div>;
 }
 
 function MyAccount() {
@@ -24,9 +30,11 @@ function MyAccount() {
   return (
     <div className="grid md:grid-cols-2 gap-4 mb-4">
       <Card className="p-5">
-        <h2 className="text-h2 mb-3">我的账号</h2>
-        <Row k="用户名" v={me.username} />
-        <Row k="角色" v={isAdmin() ? "管理员" : "成员"} />
+        <div className="flex items-center gap-3 mb-4">
+          <Avatar name={me.username || "?"} size={40} />
+          <div><div className="text-[15px] font-semibold">{me.username}</div>
+            <span className={"tag mt-0.5 " + (isAdmin() ? "tag-violet" : "tag-gray")}>{isAdmin() ? "管理员" : "成员"}</span></div>
+        </div>
         {!isAdmin() && (
           <div className="mt-3">
             <div className="flex justify-between text-aux mb-1"><span className="text-ink-soft">GPU 总配额</span><span className="tabular-nums">{used} / {total} 卡</span></div>
@@ -36,11 +44,12 @@ function MyAccount() {
         )}
       </Card>
       <Card className="p-5">
-        <h2 className="text-h2 mb-3">修改密码</h2>
-        <form onSubmit={change} className="space-y-2.5">
+        <Head icon={KeyRound} tone="amber" title="修改密码" />
+        <form onSubmit={change} className="space-y-3">
           <input className="field" type="password" placeholder="当前密码" value={oldPw} onChange={(e) => setOldPw(e.target.value)} autoComplete="current-password" aria-label="当前密码" />
           <input className="field" type="password" placeholder="新密码（至少 8 位）" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" aria-label="新密码" />
-          <button type="submit" className="btn btn-pri" disabled={busy || !oldPw || !newPw}>修改密码</button>
+          {newPw && newPw.length < 8 && <p className="hint text-warn">新密码至少 8 位，还差 {8 - newPw.length} 位</p>}
+          <button type="submit" className="btn btn-pri" disabled={busy || !oldPw || newPw.length < 8}>修改密码</button>
         </form>
       </Card>
     </div>
@@ -69,7 +78,7 @@ export function SettingsPage({ state }: { state: AppState }) {
       <PageBar title="设置" />
       {publicMode && <MyAccount />}
       <Card className="p-5 mb-4">
-        <h2 className="text-h2 mb-3">平台连接</h2>
+        <Head icon={Link2} tone="sky" title="平台连接" />
         <Row k="版本" v={`qd ${state.version}`} />
         <Row k="平台地址" v={<span className="text-ink-soft">{state.baseUrl}</span>} />
         <Row k="空间 ID" v={<span className="text-ink-soft">{state.spaceId || "-"}</span>} />
@@ -80,23 +89,22 @@ export function SettingsPage({ state }: { state: AppState }) {
       {isAdmin() && (
         <>
           <Card className="p-5 mb-4">
-            <h2 className="text-h2 mb-3">修改配置<span className="font-normal text-ink-faint ml-2 text-aux">重启 qd web 生效</span></h2>
+            <Head icon={SlidersHorizontal} tone="slate" title="修改配置" extra={<span className="text-aux text-ink-faint">重启 qd web 生效</span>} />
             <div className="flex items-center gap-2 flex-wrap">
               <select className="field w-44" value={key} onChange={(e) => setKey(e.target.value)} aria-label="配置项">
                 {["base-url", "space-id", "concurrency", "connect-timeout", "request-timeout", "insecure-tls"].map((k) => <option key={k}>{k}</option>)}
               </select>
-              <input className="field flex-1 max-w-sm" placeholder="值" value={val} onChange={(e) => setVal(e.target.value)} aria-label="配置值" />
-              <button className="btn btn-pri" onClick={save}>保存</button>
+              <input className="field flex-1 max-w-sm" placeholder="值" value={val} onChange={(e) => setVal(e.target.value)} aria-label="配置值" onKeyDown={(e) => e.key === "Enter" && val.trim() && save()} />
+              <button className="btn btn-pri" onClick={save} disabled={!val.trim()}>保存</button>
             </div>
           </Card>
           <Card className="p-5">
-            <h2 className="text-h2 mb-3">登录保活</h2>
+            <Head icon={HeartPulse} tone="rose" title="登录保活" extra={ka && <span className="tag tag-gray">{ka}</span>} />
             <div className="flex items-center gap-2 flex-wrap">
               <button className="btn" onClick={() => keepalive("status")}>查看状态</button>
               <button className="btn" onClick={() => keepalive("once")}>立即保活一次</button>
               <button className="btn" onClick={() => keepalive("install")}>安装计划任务（30 分钟）</button>
               <button className="btn btn-danger" onClick={() => keepalive("remove")}>移除计划任务</button>
-              <span className="text-aux text-ink-faint">{ka}</span>
             </div>
           </Card>
         </>

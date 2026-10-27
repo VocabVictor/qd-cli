@@ -128,6 +128,10 @@ impl SessionStore {
             .cloned()
     }
 
+    pub(crate) async fn id_of(&self, token: &str) -> Option<String> {
+        self.live.read().await.get(token).map(|s| s.id.clone())
+    }
+
     pub(crate) async fn list(&self) -> Vec<Session> {
         let now = Instant::now();
         let mut all: Vec<Session> = self.live.read().await.values().filter(|s| s.expires > now).cloned().collect();

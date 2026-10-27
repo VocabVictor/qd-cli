@@ -4,7 +4,7 @@ import { api, qget, canManageJob } from "../lib/api";
 import { Drawer, DrawerTab } from "./Drawer";
 import { LineChart } from "./Chart";
 
-const COLORS: Record<string, string> = { gpu_util: "#0A66D8", gpu_memory: "#6E4BC9", cpu: "#1F8A4C", memory: "#A86400" };
+const COLORS: Record<string, string> = { gpu_util: "#4F46E5", gpu_memory: "#7C3AED", cpu: "#0F766E", memory: "#0369A1" };
 const fmt = (v: number | null | undefined, unit: string) => (v == null ? "—" : `${v.toFixed(0)}${unit}`);
 
 type Tab = "metrics" | "logs" | "terminal";
@@ -80,12 +80,12 @@ export function Monitor({ job, onClose, initialTab = "metrics" }: { job: Monitor
         !metrics ? <div className="flex items-center gap-2 text-ink-faint text-[13px] p-5"><Loader2 size={14} className="animate-spin" />读取监控…</div> :
         <div className="grid sm:grid-cols-2 sm:divide-x divide-line">
           {shown.map((m: any) => (
-            <section key={m.metric} className="px-5 py-4 border-b border-line" data-metric={m.metric}>
+            <section key={m.metric} className="px-6 py-5 border-b border-line-soft" data-metric={m.metric}>
               <div className="flex items-baseline gap-3">
-                <h3 className="text-h2">{m.label}</h3>
+                <h3 className="text-h2 flex items-center gap-2"><i className="w-2 h-2 rounded-full" style={{ background: COLORS[m.metric] }} />{m.label}</h3>
                 <span className="flex-1" />
                 <span className="text-[11px] text-ink-faint tabular-nums">均值 {fmt(m.avg, m.unit)}，峰值 {fmt(m.max, m.unit)}</span>
-                <span className="text-[18px] font-semibold tabular-nums w-14 text-right">{fmt(m.last, m.unit)}</span>
+                <span className="text-[20px] font-semibold tabular-nums w-16 text-right" style={{ color: COLORS[m.metric] }}>{fmt(m.last, m.unit)}</span>
               </div>
               <LineChart points={m.points || []} color={COLORS[m.metric]} unit={m.unit} />
             </section>
@@ -97,15 +97,15 @@ export function Monitor({ job, onClose, initialTab = "metrics" }: { job: Monitor
       {tab === "logs" && (
         logErr ? <p className="p-5 text-body text-danger">日志读取失败：{logErr}</p> :
         logs === null ? <div className="flex items-center gap-2 text-ink-faint text-[13px] p-5"><Loader2 size={14} className="animate-spin" />读取日志…</div> :
-        <pre ref={logBox} data-testid="job-logs" className="m-0 flex-1 overflow-auto px-5 py-3 font-mono text-[12px] leading-[18px] text-ink whitespace-pre-wrap break-all bg-canvas">
-          {logs.length ? logs.join("\n") : <span className="text-ink-faint">还没有日志输出。</span>}
+        <pre ref={logBox} data-testid="job-logs" className="m-0 flex-1 overflow-auto px-6 py-4 font-mono text-[12px] leading-[19px] text-[#CBD5E1] whitespace-pre-wrap break-all bg-[#0B1020]">
+          {logs.length ? logs.join("\n") : <span className="text-[#64748B]">还没有日志输出。</span>}
         </pre>
       )}
 
       {tab === "terminal" && (
         termErr ? <div className="p-5 text-body"><p className="text-danger mb-3">终端不可用：{termErr}</p><button className="btn btn-mini" onClick={loadTerminal}><RotateCw size={12} />重试</button></div> :
         !termUrl ? <div className="flex items-center gap-2 text-ink-faint text-[13px] p-5"><Loader2 size={14} className="animate-spin" />连接终端…</div> :
-        <iframe key={termKey} src={termUrl} title="网页终端" className="flex-1 w-full bg-[#1C1C1E]" style={{ border: 0 }} />
+        <iframe key={termKey} src={termUrl} title="网页终端" className="flex-1 w-full bg-[#0B1020]" style={{ border: 0 }} />
       )}
     </Drawer>
   );

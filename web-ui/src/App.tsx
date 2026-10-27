@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Home, Rocket, Boxes, Server, Package, Settings as Cog, LogOut, Gauge, Upload, Users } from "lucide-react";
 import { api, AppState, LocalAuthState, setMe } from "./lib/api";
-import { ToastHost, Spinner } from "./components/ui";
+import { ToastHost, Spinner, clearToasts } from "./components/ui";
 import { AuthGate } from "./pages/AuthGate";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
@@ -14,15 +14,17 @@ import { Quota } from "./pages/Quota";
 import { Transfer } from "./pages/Transfer";
 import { Admin } from "./pages/Admin";
 
-const NAV = [
+type NavItem = { v: string; label: string; icon: typeof Home };
+const WORK: NavItem[] = [
   { v: "overview", label: "概览", icon: Home },
   { v: "jobs", label: "作业", icon: Rocket },
   { v: "devs", label: "开发环境", icon: Boxes },
+];
+const RES: NavItem[] = [
   { v: "nodes", label: "节点", icon: Server },
   { v: "quota", label: "配额", icon: Gauge },
-  { v: "transfer", label: "传输", icon: Upload },
   { v: "images", label: "镜像", icon: Package },
-  { v: "settings", label: "设置", icon: Cog },
+  { v: "transfer", label: "传输", icon: Upload },
 ];
 
 const PAGES: Record<string, (p: { state: AppState }) => JSX.Element> = {
@@ -43,7 +45,7 @@ export function App() {
     setBooting(true);
     api.localAuth.state()
       .then((la) => {
-        setLocalAuth(la); setMe(la);
+        setLocalAuth((prev) => { if (prev?.loggedIn !== la.loggedIn) clearToasts(); return la; }); setMe(la);
         if (la.required && !la.loggedIn) { setBooting(false); return; }
         return reload();
       })
@@ -63,7 +65,8 @@ export function App() {
   }, []);
 
   const admin = localAuth?.role === "admin";
-  const nav = admin && localAuth?.required ? [...NAV.slice(0, -1), { v: "admin", label: "用户与配额", icon: Users }, NAV[NAV.length - 1]] : NAV;
+  const groups: [string, NavItem[]][] = [["工作台", WORK], ["资源", RES],
+    ["系统", [...(admin && localAuth?.required ? [{ v: "admin", label: "用户与权限", icon: Users }] : []), { v: "settings", label: "设置", icon: Cog }]]];
   const go = (v: string) => { location.hash = v; setView(v); };
   const Page = (view === "admin" && !admin ? undefined : PAGES[view]) || Overview;
   const usedTotal = localAuth?.usage?.total ?? 0, quotaTotal = localAuth?.quota?.total ?? 0;
@@ -91,39 +94,51 @@ export function App() {
         )
       ) : (
         <div className="flex h-full">
-          <aside className="w-[220px] shrink-0 border-r border-line flex flex-col bg-canvas">
-            <div className="flex items-center gap-2.5 h-14 px-4">
-              <span className="grid place-items-center w-6 h-6 rounded-[5px] bg-ink text-white text-[11px] font-semibold">qd</span>
+          <aside className="w-[232px] shrink-0 flex flex-col bg-side text-white">
+            <div className="flex items-center gap-2.5 h-16 px-5">
+              <span className="grid place-items-center w-8 h-8 rounded-[9px] bg-gradient-to-br from-[#818CF8] to-[#4F46E5] text-white text-[13px] font-bold tracking-tight shadow-[0_4px_12px_-2px_rgba(99,102,241,.6)]">qd</span>
               <div className="min-w-0">
-                <div className="text-[13px] font-semibold leading-tight">qd 控制台</div>
-                <div className="text-[11px] text-ink-faint leading-tight">v{state.version}</div>
+                <div className="text-[14px] font-semibold leading-tight tracking-tight">qd 控制台</div>
+                <div className="text-[11px] text-side-text leading-tight mt-0.5">GPU 集群工作台</div>
               </div>
             </div>
-            <nav className="px-2 flex-1 space-y-px overflow-y-auto" aria-label="主导航">
-              {nav.map(({ v, label, icon: Icon }) => (
-                <button key={v} onClick={() => go(v)} className="nav-item" aria-current={view === v ? "page" : undefined}>
-                  <Icon size={15} strokeWidth={1.8} className={view === v ? "text-ink" : "text-ink-faint"} />{label}
-                </button>
+            <nav className="px-3 flex-1 overflow-y-auto pb-3" aria-label="主导航">
+              {groups.map(([title, items]) => (
+                <div key={title} className="mt-4 first:mt-1">
+                  <div className="px-2.5 mb-1 text-[11px] font-medium text-[#5B6478] tracking-wide">{title}</div>
+                  <div className="space-y-0.5">
+                    {items.map(({ v, label, icon: Icon }) => (
+                      <button key={v} onClick={() => go(v)} className="nav-item" aria-current={view === v ? "page" : undefined}>
+                        <Icon size={16} strokeWidth={1.8} className={view === v ? "text-[#A5B4FC]" : "text-[#64748B]"} />{label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </nav>
-            <div className="border-t border-line px-3 py-3 flex items-center gap-2.5">
-              <span className="grid place-items-center w-7 h-7 rounded-full bg-selected text-[12px] font-semibold text-ink-soft uppercase shrink-0">
-                {(localAuth?.username || state.username || "?").slice(0, 1)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium truncate flex items-center gap-1.5">
-                  <span className="truncate">{localAuth?.required ? localAuth.username : state.username}</span>
-                  {localAuth?.required && admin && <span className="tag tag-violet">管理员</span>}
+            <div className="m-3 p-3 rounded-[10px] bg-side-soft border border-side-line">
+              <div className="flex items-center gap-2.5">
+                <span className="grid place-items-center w-8 h-8 rounded-full bg-gradient-to-br from-[#334155] to-[#1E293B] text-[12px] font-semibold text-white uppercase shrink-0 ring-1 ring-white/10">
+                  {(localAuth?.username || state.username || "?").slice(0, 1)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium truncate">{localAuth?.required ? localAuth.username : state.username}</div>
+                  <div className="text-[11px] text-side-text truncate">
+                    {!localAuth?.required ? "本机模式" : admin ? "管理员" : "成员"}
+                  </div>
                 </div>
-                <div className="text-[11px] text-ink-faint truncate">
-                  {localAuth?.required && !admin ? `GPU 已用 ${usedTotal} / ${quotaTotal} 卡` : `平台账号 ${state.username}`}
-                </div>
+                <button className="grid place-items-center w-7 h-7 rounded-ctl text-side-text hover:text-white hover:bg-white/10 transition-colors" title="退出登录" aria-label="退出" onClick={logoutAll}><LogOut size={15} /></button>
               </div>
-              <button className="btn btn-ghost btn-mini px-1.5 text-ink-faint" title="退出" aria-label="退出" onClick={logoutAll}><LogOut size={14} /></button>
+              {localAuth?.required && !admin && (
+                <div className="mt-3">
+                  <div className="text-[11px] text-side-text mb-1.5 tabular-nums">GPU 已用 {usedTotal} / {quotaTotal} 卡</div>
+                  <div className="h-1 rounded-full bg-white/10 overflow-hidden"><i className="block h-full rounded-full bg-[#818CF8]" style={{ width: `${quotaTotal ? Math.min(100, (usedTotal / quotaTotal) * 100) : 0}%` }} /></div>
+                </div>
+              )}
             </div>
           </aside>
           <main className="flex-1 overflow-y-auto">
-            <div className="max-w-[1480px] mx-auto px-6 py-5"><Page state={state} /></div>
+            <div key={view} className="max-w-[1440px] mx-auto px-8 py-7 animate-rise"><Page state={state} /></div>
           </main>
         </div>
       )}

@@ -3,7 +3,7 @@ import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
 import { AppState, pcall, qget, field, spacesOf } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { useList } from "../lib/table";
-import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, useToast } from "../components/ui";
+import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Badge, Card, Empty, statusText, useToast } from "../components/ui";
 import { Drawer, Json } from "../components/Drawer";
 import { Copy } from "lucide-react";
 
@@ -43,11 +43,10 @@ export function Devs({ state }: { state: AppState }) {
     <>
       <PageBar title="开发环境" right={
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-aux text-ink-soft cursor-pointer select-none">
-            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
-            显示全部项目
+          <label className={"inline-flex items-center gap-2 h-8 px-3 rounded-ctl border text-[13px] cursor-pointer select-none transition-colors shadow-ctl " + (showAll ? "bg-brand-50 border-brand/30 text-brand" : "bg-white border-line text-ink-soft hover:text-ink")}>
+            <input type="checkbox" className="accent-brand w-3.5 h-3.5" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />显示全部项目
           </label>
-          <select className="field w-28" value={scope} onChange={(e) => setScope(e.target.value)}>{["mine", "shared", "public", "all"].map((s) => <option key={s}>{s}</option>)}</select>
+          <select className="field field-sm w-32" aria-label="范围" value={scope} onChange={(e) => setScope(e.target.value)}>{[["mine", "我的项目"], ["shared", "共享项目"], ["public", "公开项目"], ["all", "全部项目"]].map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           <button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>
         </div>} />
       <Toolbar search={search} onSearch={setSearch} placeholder="搜索 项目 / ID / 负责人 / 状态">
@@ -58,7 +57,7 @@ export function Devs({ state }: { state: AppState }) {
         )}
         {statuses.length > 1 && (
           <select className="field w-32" value={filters.status || ""} onChange={(e) => setFilter("status", e.target.value, (d, v) => String(field(d, ["jobenvStatus"], "")) === v)}>
-            <option value="">全部状态</option>{statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+            <option value="">全部状态</option>{statuses.map((s) => <option key={s} value={s}>{statusText(s)}</option>)}
           </select>
         )}
       </Toolbar>
@@ -74,47 +73,49 @@ export function Devs({ state }: { state: AppState }) {
           <SortTh sortKey="id" active={sortKey === "id"} dir={sortDir} onSort={toggleSort}>环境 ID</SortTh>
           <Th>空间</Th>
           <SortTh sortKey="status" active={sortKey === "status"} dir={sortDir} onSort={toggleSort}>状态</SortTh>
-          <Th>负责人</Th><Th>操作</Th>
+          <Th>负责人</Th><Th><span className="sr-only">操作</span></Th>
         </>}>
           {view.length ? view.map((d, i) => {
             const id = String(field(d, ["jobenvId"], "")), sp = d.spaceId || "";
             return (
-              <tr key={i} className="hover:bg-canvas/60">
-                <Td clip><b>{field(d, ["projectName", "projectId"])}</b></Td>
-                <Td><span className="text-[11px] text-ink-faint">{id}</span></Td>
+              <tr key={i}>
+                <Td clip><span className="font-medium">{field(d, ["projectName", "projectId"])}</span></Td>
+                <Td><span className="text-[12px] text-ink-faint font-mono">{id}</span></Td>
                 <Td>{d.spaceName || "-"}</Td>
                 <Td><Badge text={field(d, ["jobenvStatus"], "-")} /></Td>
                 <Td clip>{field(d, ["ownerDisplayName", "createDisplayName"])}</Td>
-                <Td className="whitespace-nowrap">
-                  <button className="btn btn-mini mr-1" onClick={() => term(id, sp)}><ExternalLink size={12} />终端</button>
-                  <button className="btn btn-mini" onClick={() => openDetail(id, sp)}>详情</button>
+                <Td className="whitespace-nowrap text-right">
+                  <span className="inline-flex gap-1">
+                    <button className="btn btn-mini" title="在新标签页打开网页终端" onClick={() => term(id, sp)}><ExternalLink size={12} />终端</button>
+                    <button className="btn btn-mini" onClick={() => openDetail(id, sp)}>详情与 SSH</button>
+                  </span>
                 </Td>
               </tr>
             );
-          }) : <tr><Td className="text-ink-faint">没有匹配的开发环境</Td></tr>}
+          }) : <tr><td colSpan={6}><Empty>{search ? "没有匹配的开发环境，清空搜索试试。" : "还没有开发环境。"}</Empty></td></tr>}
         </Table>}
       <Drawer open={!!detail} onClose={() => setDetail(null)} title={detail && `开发环境 ${detail.id}`}>
-        {detail?.loading ? <Spinner /> : detail?.error ? <Card className="p-4 text-sm">加载失败：{detail.error}</Card> : detail && (() => {
+        {detail?.loading ? <Spinner /> : detail?.error ? <p className="p-6 text-body text-danger">加载失败：{detail.error}</p> : detail && (() => {
           const d = detail.data?.data || detail.data || {};
           const inst = (((d.devJobDetail || {}).taskroleList || [])[0] || {}).instanceList || [];
           const raw = String(field(inst[0] || {}, ["sshConnection"], "") || "").trim();
           // 平台网关只认 ssh-rsa 签名，OpenSSH 8.8+ 默认拒绝，原样粘贴会 Permission denied
           const ssh = raw && raw !== "-" ? raw.replace(/^ssh\s+/, "ssh -o PubkeyAcceptedAlgorithms=+ssh-rsa ") : "";
           return (
-            <div className="space-y-4">
-              <Card className="p-4">
-                <div className="mb-2"><b className="text-sm">VS Code / SSH 连接</b></div>
+            <div className="p-6 space-y-4">
+              <Card className="p-5">
+                <div className="mb-3 text-h2">VS Code / SSH 连接</div>
                 {ssh ? (
                   <>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 text-xs bg-canvas rounded-lg px-3 py-2 break-all border border-line">{ssh}</code>
+                      <code className="code flex-1">{ssh}</code>
                       <button className="btn btn-mini" onClick={() => { navigator.clipboard?.writeText(ssh); toast("已复制 SSH 连接"); }}><Copy size={12} />复制</button>
                     </div>
                     <p className="text-xs text-ink-faint mt-2">VS Code 装 Remote-SSH 扩展 → 命令面板「Remote-SSH: Connect to Host」→ 粘贴上面的 host（先把它加入 ~/.ssh/config），即可连到申请的 GPU 环境写代码。</p>
                   </>
                 ) : <p className="text-sm text-ink-faint">未启用 SSH。在终端执行 qd dev ssh-config {detail.id} --enable 后刷新详情获取连接串。</p>}
               </Card>
-              <details><summary className="text-sm text-ink-soft cursor-pointer">原始详情 JSON</summary><div className="mt-2"><Json value={detail.data} /></div></details>
+              <details><summary className="text-[13px] text-ink-soft cursor-pointer hover:text-ink">原始详情 JSON</summary><div className="mt-2"><Json value={detail.data} /></div></details>
             </div>
           );
         })()}

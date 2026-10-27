@@ -15,8 +15,8 @@ export function Ring({ pct, size = 40 }: { pct: number; label?: string; tone?: s
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E4E4E7" strokeWidth={3} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#0A66D8" strokeWidth={3} strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E4E7EC" strokeWidth={3} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#4F46E5" strokeWidth={3} strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} />
       </svg>
       <div className="absolute inset-0 grid place-items-center text-[10px] font-semibold">{Math.round(v)}%</div>
     </div>
@@ -24,7 +24,7 @@ export function Ring({ pct, size = 40 }: { pct: number; label?: string; tone?: s
 }
 
 /* ---------- 迷你曲线 ---------- */
-export function Spark({ points, color = "#0A66D8", h = 24, w = 96 }: { points: number[]; color?: string; h?: number; w?: number }) {
+export function Spark({ points, color = "#4F46E5", h = 24, w = 96 }: { points: number[]; color?: string; h?: number; w?: number }) {
   const pad = 1.5, n = points.length;
   // 纵轴按数据范围自适应，并保证最小量程，避免噪声被放大成剧烈波动。
   const top = Math.max((n ? Math.max(...points) : 0) * 1.2, 5);
@@ -37,7 +37,7 @@ export function Spark({ points, color = "#0A66D8", h = 24, w = 96 }: { points: n
     <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className="block" preserveAspectRatio="none" aria-hidden>
       {path
         ? <path d={path} fill="none" stroke={color} strokeWidth={1.25} strokeLinejoin="round" strokeLinecap="round" />
-        : <line x1={pad} x2={w - pad} y1={h - pad} y2={h - pad} stroke="#E4E4E7" strokeWidth={1} />}
+        : <line x1={pad} x2={w - pad} y1={h - pad} y2={h - pad} stroke="#E4E7EC" strokeWidth={1} />}
     </svg>
   );
 }
@@ -100,7 +100,7 @@ export function Heatmap({ nodes, onPick }: { nodes: HeatNode[]; onPick?: (n: Hea
                   onFocus={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover({ n, x: r.left + r.width / 2, y: r.top }); }}
                   onBlur={() => setHover(null)}
                   onClick={() => onPick?.(n)}
-                  className={clsx("w-4 h-4 rounded-cell outline-none hover:outline hover:outline-2 hover:outline-ink/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand", heatClass(n.free))}
+                  className={clsx("w-4 h-4 rounded-cell outline-none hover:outline hover:outline-2 hover:outline-brand/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand", heatClass(n.free))}
                   aria-label={`${n.name}，空闲 ${n.free} / ${n.total} 卡`} />
               ))}
             </div>
@@ -110,7 +110,7 @@ export function Heatmap({ nodes, onPick }: { nodes: HeatNode[]; onPick?: (n: Hea
       </div>
       {hover && (
         <div className="fixed z-50 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: hover.x, top: hover.y - 6 }}>
-          <div className="bg-ink text-white rounded-ctl px-2.5 py-1.5 text-[12px] whitespace-nowrap">
+          <div className="bg-[#0B1020] text-white rounded-ctl px-2.5 py-1.5 shadow-pop text-[12px] whitespace-nowrap">
             <div className="font-medium">{hover.n.name}</div>
             <div className="text-white/75">空闲 {hover.n.free} / {hover.n.total} 卡{hover.n.model ? `，${hover.n.model}` : ""}</div>
           </div>

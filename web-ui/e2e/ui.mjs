@@ -101,7 +101,7 @@ try {
     check("没有账号时默认在注册页签", await A.page.locator("#auth-invite").isVisible());
     await shot(A.page, "01-auth.png");
     await register(A.page, "boss", "bosspass123", ADMIN_CODE);
-    check("管理员能看到「用户与配额」导航", await A.page.getByRole("button", { name: "用户与配额" }).isVisible());
+    check("管理员能看到「用户与权限」导航", await A.page.getByRole("button", { name: "用户与权限" }).isVisible());
     check("侧栏没有红黄绿装饰点", (await A.page.locator("aside .rounded-full.w-3.h-3").count()) === 0);
   });
 
@@ -128,7 +128,7 @@ try {
   const B = await open();
   await step("成员注册与零配额拦截", async () => {
     await register(B.page, "alice", "alicepass1", USER_CODE);
-    check("成员看不到「用户与配额」导航", !(await B.page.getByRole("button", { name: "用户与配额" }).isVisible()));
+    check("成员看不到「用户与权限」导航", !(await B.page.getByRole("button", { name: "用户与权限" }).isVisible()));
     check("成员侧栏显示 0 / 0 卡", await B.page.locator("aside").getByText("GPU 已用 0 / 0 卡").isVisible());
     await B.page.getByRole("button", { name: "提交作业" }).first().click();
     await B.page.waitForSelector("#cf-name");
@@ -168,7 +168,7 @@ try {
 
   // ---------- 4. 管理员分配配额 ----------
   await step("管理员分配配额", async () => {
-    await A.page.getByRole("button", { name: "用户与配额" }).click();
+    await A.page.getByRole("button", { name: "用户与权限" }).click();
     await A.page.waitForSelector("[data-user=alice]");
     const row = A.page.locator("[data-user=alice]");
     await row.getByLabel("总配额（全部空间） 上限").fill("4");
@@ -313,7 +313,7 @@ try {
     const stopped = platform.jobs.filter((j) => ["STOPPING", "STOPPED", "FAILED"].includes(j.status)).length;
     await pg.waitForFunction(() => document.querySelector("[data-testid=pager]")?.textContent?.includes("第 1–"), null, { timeout: 10000 });
     check(`「已停止」按平台状态筛选，共 ${stopped} 个`, (await pg.getByTestId("pager").innerText()).includes(`共 ${stopped} 个`));
-    check("已停止页里没有运行中的作业", (await pg.locator("tbody").innerText()).includes("RUNNING") === false);
+    check("已停止页里没有运行中的作业", (await pg.locator("tbody").innerText()).includes("运行中") === false);
     check("状态筛选用平台的 jobStatus 参数", platform.listCalls.some((c) => c.jobStatus === "FAILED"));
 
     await pg.getByRole("tab", { name: /全部/ }).click();
@@ -417,10 +417,14 @@ try {
 
   // ---------- 7b. 登录安全：单点登录踢下线、管理员看在线会话、换设备掉线 ----------
   await step("登录安全", async () => {
-    await A.page.getByRole("button", { name: "用户与配额" }).click();
-    await A.page.waitForSelector("[data-session]", { timeout: 10000 });
+    await A.page.getByRole("button", { name: "用户与权限" }).click();
+    await A.page.getByRole("tab", { name: "登录安全" }).click();
     check("管理员能看到成员登录限制设置", await A.page.getByText("成员登录限制").isVisible());
+    await A.page.getByRole("tab", { name: "在线会话" }).click();
+    await A.page.waitForSelector("[data-session]", { timeout: 10000 });
     check("在线会话里有 alice 和她的设备指纹", (await A.page.locator("[data-session=alice]").innerText()).includes(deviceOf(B.page)));
+    check("自己的当前会话不能踢", (await A.page.locator("[data-session=boss]").getByRole("button", { name: "踢下线" }).count()) === 0);
+    await A.page.getByRole("tab", { name: /用户与配额/ }).click();
     // 单个成员逐项覆盖：只把 alice 的单点登录改成「不限制」，其余跟随全局
     const card = A.page.locator("[data-user=alice]");
     await card.getByRole("button", { name: /登录限制/ }).click();

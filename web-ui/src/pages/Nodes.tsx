@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, Server, Cpu, MemoryStick, Gauge } from "lucide-react";
 import { api, AppState, fmtMiB, fmtCpu, splitList, field } from "../lib/api";
 import { useCached } from "../lib/cache";
-import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Stat, Pager } from "../components/ui";
+import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Stat, Pager, Empty } from "../components/ui";
 
 const PAGE_SIZE = 20;
 
@@ -42,20 +42,20 @@ export function Nodes({ state: _state }: { state: AppState }) {
           <option value="">全部 GPU 型号</option>
           {(facets?.models || []).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-[13px] text-ink-soft ml-1 cursor-pointer select-none">
-          <input type="checkbox" className="accent-brand" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} />只看有空闲卡的
+        <label className={"inline-flex items-center gap-2 h-9 px-3 rounded-ctl border text-[13px] cursor-pointer select-none transition-colors shadow-ctl " + (freeOnly ? "bg-brand-50 border-brand/30 text-brand" : "bg-white border-line text-ink-soft hover:text-ink")}>
+          <input type="checkbox" className="accent-brand w-3.5 h-3.5" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} />只看有空闲卡的
         </label>
       </Toolbar>
 
       {error && !data && <div className="card p-4 text-body mb-3">节点列表读取失败：{error}。检查平台连接后点刷新。</div>}
       {loading ? <Spinner /> : <>
-        <section className="card mb-4 grid grid-cols-2 md:grid-cols-4 divide-x divide-line" aria-label="筛选范围内的资源汇总">
-          <Stat label="节点" sub="当前筛选范围">{total}</Stat>
-          <Stat label="物理 GPU 已用" sub={`共 ${Number(sum.pGpuTotal) || 0} 卡`}>
+        <section className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-5" aria-label="筛选范围内的资源汇总">
+          <Stat label="节点" icon={Server} tone="slate" sub="当前筛选范围">{total}</Stat>
+          <Stat label="物理 GPU 已用" icon={Gauge} tone="brand" sub={`共 ${Number(sum.pGpuTotal) || 0} 卡`}>
             {Number(sum.pGpuUsed) || 0}<span className="text-body font-normal text-ink-faint"> / {Number(sum.pGpuTotal) || 0}</span>
           </Stat>
-          <Stat label="CPU 已用（核）" sub={`共 ${fmtCpu((Number(sum.cpuTotal) || 0) / 1000)} 核`}>{fmtCpu((Number(sum.cpuUsed) || 0) / 1000)}</Stat>
-          <Stat label="内存已用" sub={`共 ${fmtMiB(Number(sum.memoryTotal) || 0)}`}>{fmtMiB(Number(sum.memoryUsed) || 0)}</Stat>
+          <Stat label="CPU 已用（核）" icon={Cpu} tone="teal" sub={`共 ${fmtCpu((Number(sum.cpuTotal) || 0) / 1000)} 核`}>{fmtCpu((Number(sum.cpuUsed) || 0) / 1000)}</Stat>
+          <Stat label="内存已用" icon={MemoryStick} tone="sky" sub={`共 ${fmtMiB(Number(sum.memoryTotal) || 0)}`}>{fmtMiB(Number(sum.memoryUsed) || 0)}</Stat>
         </section>
         <Table head={<>
           <Th>节点</Th><Th>GPU 型号</Th>
@@ -66,17 +66,17 @@ export function Nodes({ state: _state }: { state: AppState }) {
           <Th>资源组</Th><Th num>作业</Th>
         </>}>
           {nodes.length ? nodes.map((n) => (
-            <tr key={n.name || n.ip} className="hover:bg-hover" data-node={n.name || n.ip}>
-              <Td><div className="font-medium">{field(n, ["name"])}</div><div className="text-[11px] text-ink-faint">{field(n, ["ip", "accessIp"], "")}</div></Td>
-              <Td clip className="text-ink-soft">{splitList(n.gpuModels).join("、") || "—"}</Td>
-              <Td num><span className={Number(n.gpuLeft) ? "font-medium" : "text-ink-faint"}>{n.gpuLeft ?? "—"}</span></Td>
+            <tr key={n.name || n.ip} data-node={n.name || n.ip}>
+              <Td><div className="font-medium">{field(n, ["name"])}</div><div className="text-[11px] text-ink-faint font-mono">{field(n, ["ip", "accessIp"], "")}</div></Td>
+              <Td clip>{splitList(n.gpuModels).length ? <span className="tag tag-gray">{splitList(n.gpuModels).join("、")}</span> : <span className="text-ink-faint">—</span>}</Td>
+              <Td num>{Number(n.gpuLeft) ? <span className="tag tag-ok tabular-nums">{n.gpuLeft}</span> : <span className="text-ink-faint">{n.gpuLeft ?? "—"}</span>}</Td>
               <Td num>{n.gpuUsed ?? "—"} / {n.gpuTotal ?? "—"}</Td>
               <Td num>{fmtCpu(n.cpuRequest)} / {fmtCpu(n.cpuTotal)}</Td>
               <Td num>{fmtMiB(n.memoryRequest)} / {fmtMiB(n.memoryTotal)}</Td>
               <Td clip className="text-ink-soft">{splitList(n.resourceGroups).join("、") || "—"}</Td>
               <Td num>{(n.jobList || []).length}</Td>
             </tr>
-          )) : <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-faint">没有符合条件的节点，换个资源组或型号试试。</td></tr>}
+          )) : <tr><td colSpan={8}><Empty>没有符合条件的节点，换个资源组或型号试试。</Empty></td></tr>}
         </Table>
         <Pager page={page} size={PAGE_SIZE} total={total} count={nodes.length} busy={refreshing} onPage={setPage} />
       </>}

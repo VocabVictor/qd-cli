@@ -263,7 +263,11 @@ expect "deny 模式下管理员仍可多处登录" 200
 req GET /api/admin/sessions "$(jar admin)"
 expect "管理员列出在线会话" 200
 has "会话列表含 carol 的设备指纹" '"device":"devbbbb2222"'
+has "会话列表标出当前会话" '"current":true'
+MINE=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(s["id"] for s in d["data"]["sessions"] if s.get("current")))' "$BODY" 2>/dev/null)
 SID=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(s["id"] for s in d["data"]["sessions"] if s["username"]=="carol"))' "$BODY" 2>/dev/null)
+req DELETE "/api/admin/sessions/$MINE" "$(jar admin)"
+expect "不能踢掉自己的当前会话" 400
 req DELETE "/api/admin/sessions/$SID" "$(jar admin)"
 expect "管理员踢 carol 下线" 200
 req GET /api/auth/state "$(jar carol2)" "" -H "X-QD-Device: devbbbb2222"
