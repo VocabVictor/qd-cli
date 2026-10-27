@@ -1,8 +1,8 @@
-import { useState, ReactNode } from "react";
+import { useState } from "react";
 import { RefreshCw, Loader2, Plus } from "lucide-react";
-import { api, AppState, pcall, eachSpace, asList, field, fmtTime, getMe, isAdmin } from "../lib/api";
+import { api, AppState, asList, splitList, field, fmtTime, getMe, isAdmin } from "../lib/api";
 import { useCached } from "../lib/cache";
-import { PageBar, Spinner, Panel, Table, Th, Td, Badge, StatusDot } from "../components/ui";
+import { PageBar, Spinner, Panel, Table, Th, Td, Badge, StatusDot, Stat } from "../components/ui";
 import { Meter, Heatmap, HeatLegend, HeatNode } from "../components/viz";
 import { Monitor } from "../components/Monitor";
 import { CreateForm } from "../components/CreateForm";
@@ -10,14 +10,16 @@ import { CreateForm } from "../components/CreateForm";
 const gpuOf = (j: any) => Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0;
 const statusOf = (j: any) => String(field(j, ["status"], "")).toUpperCase();
 
-function Stat({ label, children, sub }: { label: string; children: ReactNode; sub?: ReactNode }) {
-  return (
-    <div className="px-5 py-3 min-w-0">
-      <div className="text-aux text-ink-soft">{label}</div>
-      <div className="text-[20px] leading-7 font-semibold tabular-nums">{children}</div>
-      {sub && <div className="text-[11px] text-ink-faint truncate">{sub}</div>}
-    </div>
-  );
+/** 热力图要画全部节点：按原生分页翻完整个集群。 */
+async function allNodes() {
+  const out: any[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const d = await api.nodes({ page, size: 200 });
+    const list = d.nodes || [];
+    out.push(...list);
+    if (list.length < 200 || out.length >= (Number(d.summary?.total) || 0)) break;
+  }
+  return out;
 }
 
 export function Overview({ state }: { state: AppState }) {
@@ -44,19 +46,11 @@ export function Overview({ state }: { state: AppState }) {
     };
   });
 
-  const { data: nodes } = useCached<HeatNode[]>("overview-nodes", async () => {
-    const per = await eachSpace(state, (sp) =>
-      pcall("GET", "core", "/jobQueue/node/job/list", { pageNum: 1, pageSize: 500, sortField: "left_gpu_count", sortOrder: "desc" }, sp.id));
-    const seen = new Set<string>(); const out: HeatNode[] = [];
-    for (const { space, data } of per)
-      for (const n of (data.data?.nodes || [])) {
-        const key = n.name || n.ip; if (seen.has(key)) continue; seen.add(key);
-        if (!Number(n.gpuTotal)) continue;
-        out.push({ name: n.name || n.ip, free: Number(n.gpuLeft) || 0, total: Number(n.gpuTotal) || 0,
-          model: asList(n.gpuModels)[0], group: asList(n.resourceGroups)[0], spaceId: space.id });
-      }
-    return out;
-  });
+  const { data: nodes } = useCached<HeatNode[]>("overview-nodes", async () =>
+    (await allNodes())
+      .filter((n) => Number(n.gpuTotal) > 0)
+      .map((n) => ({ name: n.name || n.ip, free: Number(n.gpuLeft) || 0, total: Number(n.gpuTotal) || 0,
+        model: splitList(n.gpuModels)[0], group: splitList(n.resourceGroups)[0] })));
 
   if (loading) return <Spinner />;
   if (error && !data) return <Panel title="概览"><div className="p-4 text-body">加载失败：{error}。检查平台连接后点刷新。</div></Panel>;
@@ -79,7 +73,7 @@ export function Overview({ state }: { state: AppState }) {
   const member = me.required && !isAdmin();
   const pickNode = (n: HeatNode) => {
     const g = groups.find((x: any) => (x.rsgroupName || x.rsgroupId) === n.group);
-    setCreate(g ? { initial: { rsgroupId: String(g.rsgroupId), spaceId: g.spaceId || n.spaceId }, label: g.rsgroupName || String(g.rsgroupId) } : {});
+    setCreate(g ? { initial: { rsgroupId: String(g.rsgroupId), spaceId: g.spaceId }, label: g.rsgroupName || String(g.rsgroupId) } : {});
   };
 
   return (

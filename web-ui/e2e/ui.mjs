@@ -106,6 +106,7 @@ try {
     await A.page.waitForSelector("text=节点可用性");
     await A.page.waitForSelector("button[aria-label*='空闲']", { timeout: 10000 });
     const gpuNodes = platform.nodes.filter((n) => n.gpuTotal > 0).length;
+    check("热力图取节点时走原生分页（pageSize 200）", platform.nodeCalls.some((c) => c.pageSize === 200));
     const squares = await A.page.locator("button[aria-label*='空闲']").count();
     check(`热力图每个 GPU 节点一个方块（${gpuNodes} 个）`, squares === gpuNodes, `实际 ${squares}`);
     const freeTotal = platform.nodes.reduce((a, n) => a + n.gpuLeft, 0);
@@ -129,7 +130,7 @@ try {
     check("成员侧栏显示 0 / 0 卡", await B.page.locator("aside").getByText("GPU 已用 0 / 0 卡").isVisible());
     await B.page.getByRole("button", { name: "提交作业" }).first().click();
     await B.page.waitForSelector("#cf-name");
-    await B.page.selectOption("#cf-repo", "r1");
+    await B.page.selectOption("#cf-repo", "1");
     await B.page.waitForFunction(() => document.querySelector("select[aria-label='镜像版本'] option[value='11']"));
     const submit = B.page.locator("[role=dialog] button", { hasText: "提交作业" });
     check("零配额时提交按钮不可用", await submit.isDisabled());
@@ -165,7 +166,7 @@ try {
     await B.page.waitForSelector("#cf-group");
     check("从热力图进入时预选该资源组", (await B.page.inputValue("#cf-group")) === "g1");
     await B.page.fill("#cf-name", "alice-finetune");
-    await B.page.selectOption("#cf-repo", "r1");
+    await B.page.selectOption("#cf-repo", "1");
     await B.page.waitForFunction(() => document.querySelector("select[aria-label='镜像版本'] option[value='11']"));
     await B.page.fill("input[aria-label='GPU 卡数']", "3");
     const submit = B.page.locator("[role=dialog] button", { hasText: "提交作业" });
@@ -293,8 +294,83 @@ try {
     await shot(pg, "06b-jobs-paged.png");
   });
 
+  // ---------- 6c. 节点页：集群级原生分页、平台筛选与排序、筛选后汇总 ----------
+  await step("节点分页", async () => {
+    const pg = B.page;
+    await pg.getByRole("button", { name: "节点", exact: true }).click();
+    await pg.waitForSelector("tbody tr[data-node]", { timeout: 10000 });
+    const total = platform.nodes.length;
+    const names = () => pg.locator("tbody tr[data-node]").evaluateAll((els) => els.map((e) => e.getAttribute("data-node")));
+    const rank = [...platform.nodes].sort((a, b) => (b.gpuLeft - a.gpuLeft) || a.name.localeCompare(b.name)).map((n) => n.name);
+    check(`节点共 ${total} 个，第 1 页 50 个`, (await pg.getByTestId("pager").innerText()).includes(`共 ${total} 个`) && (await names()).length === 50);
+    check("默认按空闲卡倒序（平台 sortField=left_gpu_count）", JSON.stringify(await names()) === JSON.stringify(rank.slice(0, 50)));
+    await pg.getByRole("button", { name: "下一页" }).click();
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-node]")?.getAttribute("data-node") === first, rank[50], { timeout: 10000 });
+    check(`第 2 页剩 ${total - 50} 个`, (await names()).length === total - 50);
+    check("翻页时向平台要 pageNum=2", platform.nodeCalls.some((c) => c.pageNum === 2 && c.pageSize === 50));
+    await pg.check("text=只看有空闲卡的");
+    const free = platform.nodes.filter((n) => n.gpuLeft >= 1);
+    await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), free.length, { timeout: 10000 });
+    check(`「只看有空闲卡的」交给平台 leftGpuCount，剩 ${free.length} 个并回到第 1 页`, (await pg.getByTestId("pager").innerText()).includes("1 / 1") && platform.nodeCalls.some((c) => c.leftGpuCount === 1));
+    const freeGpu = free.reduce((a, n) => a + n.gpuTotal, 0);
+    check(`汇总用平台按筛选算出的总量（${freeGpu} 卡）`, (await pg.locator("section[aria-label='筛选范围内的资源汇总']").innerText()).includes(`共 ${freeGpu} 卡`));
+    await pg.uncheck("text=只看有空闲卡的");
+    await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), total, { timeout: 10000 });
+    await pg.selectOption("select[aria-label='GPU 型号']", "L40S");
+    const l40 = platform.nodes.filter((n) => n.gpuModels === "L40S").length;
+    await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), l40, { timeout: 10000 });
+    check(`按型号筛选交给平台 gpuModel，剩 ${l40} 个`, platform.nodeCalls.some((c) => c.gpuModel === "L40S"));
+    await pg.selectOption("select[aria-label='GPU 型号']", "");
+    await pg.selectOption("select[aria-label='资源组']", "g3");
+    const g3 = platform.nodes.filter((n) => n.group === "g3").length;
+    await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), g3, { timeout: 10000 });
+    check(`按资源组筛选交给平台 rsgroup，剩 ${g3} 个`, platform.nodeCalls.some((c) => c.rsgroup === "g3"));
+    await pg.selectOption("select[aria-label='资源组']", "");
+    const before = platform.nodeCalls.length;
+    await pg.getByRole("columnheader", { name: /CPU 已申请/ }).click();
+    await pg.waitForFunction(() => true);
+    for (let i = 0; i < 40 && !platform.nodeCalls.slice(before).some((c) => c.sortField === "left_cpu"); i++) await pg.waitForTimeout(100);
+    check("点表头排序交给平台 sortField=left_cpu", platform.nodeCalls.slice(before).some((c) => c.sortField === "left_cpu"));
+    await shot(pg, "10-nodes.png");
+  });
+
+  // ---------- 6d. 镜像页：跨空间原生分页归并、可见性与关键字交给平台 ----------
+  await step("镜像分页", async () => {
+    const pg = B.page;
+    await pg.getByRole("button", { name: "镜像", exact: true }).click();
+    await pg.waitForSelector("tbody tr[data-repo]", { timeout: 10000 });
+    const ids = () => pg.locator("tbody tr[data-repo]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-repo"))));
+    const order = [...platform.repos].sort((a, b) => b.imageRepositoryId - a.imageRepositoryId).map((r) => r.imageRepositoryId);
+    check(`镜像共 ${platform.repos.length} 个（两个空间之和）`, (await pg.getByTestId("pager").innerText()).includes(`共 ${platform.repos.length} 个`));
+    check("第 1 页 50 个，跨空间按创建顺序（id 倒序）归并", JSON.stringify(await ids()) === JSON.stringify(order.slice(0, 50)));
+    await pg.getByRole("button", { name: "下一页" }).click();
+    await pg.waitForFunction((first) => Number(document.querySelector("tbody tr[data-repo]")?.getAttribute("data-repo")) === first, order[50], { timeout: 10000 });
+    check("第 2 页接着第 1 页", JSON.stringify(await ids()) === JSON.stringify(order.slice(50, 100)));
+    check("每个空间都用原生 pageNum/pageSize 取", ["s1", "s2"].every((sp) => platform.imageCalls.some((c) => c.space === sp && c.pageSize <= 100)));
+    const shared = platform.repos.filter((r) => r.accessType === 2).length;
+    await pg.getByRole("tab", { name: /空间共享/ }).click();
+    await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), shared, { timeout: 10000 });
+    check(`「空间共享」交给平台 source=shared，共 ${shared} 个`, platform.imageCalls.some((c) => c.source === "shared"));
+    check("可见性计数来自平台", (await pg.getByRole("tab", { name: /空间共享/ }).innerText()).includes(String(shared)));
+    const pub = platform.repos.filter((r) => r.accessType === 3).length;
+    check(`「公开」是全局列表，不重复累加（${pub} 个）`, (await pg.getByRole("tab", { name: /公开/ }).innerText()).includes(String(pub)));
+    await pg.getByRole("tab", { name: /全部/ }).click();
+    await pg.fill("input[aria-label='按仓库名搜索']", "pytorch");
+    await pg.waitForFunction(() => document.querySelectorAll("tbody tr[data-repo]").length === 1, null, { timeout: 10000 });
+    check("仓库名搜索交给平台 keyWords", platform.imageCalls.some((c) => c.keyWords === "pytorch"));
+    await pg.locator("tbody tr[data-repo='1']").click();
+    await pg.waitForSelector("text=2.4-cuda12.4", { timeout: 5000 });
+    check("点仓库能看到镜像版本", true);
+    await pg.getByRole("button", { name: "关闭" }).click();
+    await pg.fill("input[aria-label='按仓库名搜索']", "");
+    await shot(pg, "11-images.png");
+  });
+
   // ---------- 7. 取消自己的作业后释放配额 ----------
   await step("取消作业", async () => {
+    await B.page.getByRole("button", { name: "作业", exact: true }).click();
+    await B.page.getByRole("tab", { name: /运行中/ }).click();
+    await B.page.waitForSelector(`tr[data-job='${jobId}']`, { timeout: 10000 });
     B.page.once("dialog", (d) => d.accept());
     await B.page.locator(`tr[data-job='${jobId}']`).getByRole("button", { name: "取消" }).click();
     check("取消成功提示", await waitToast(B.page, /已取消/));

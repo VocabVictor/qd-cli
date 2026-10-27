@@ -1,86 +1,84 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
-import { AppState, pcall, eachSpace, spacesOf, fmtMiB, fmtCpu, asList, field } from "../lib/api";
+import { api, AppState, fmtMiB, fmtCpu, splitList, field } from "../lib/api";
 import { useCached } from "../lib/cache";
-import { useList } from "../lib/table";
-import { PageBar, Tile, Spinner, Table, Th, Td, SortTh, Toolbar, Card } from "../components/ui";
+import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Stat, Pager } from "../components/ui";
 
-export function Nodes({ state }: { state: AppState }) {
-  const spaces = spacesOf(state);
-  const { data: nodes, loading, refreshing, refresh } = useCached<any[]>(
-    "nodes", async () => {
-      const query: any = { pageNum: 1, pageSize: 500, sortField: "left_gpu_count", sortOrder: "desc" };
-      const perSpace = await eachSpace(state, (sp) => pcall("GET", "core", "/jobQueue/node/job/list", query, sp.id));
-      const seen = new Set<string>(); const out: any[] = [];
-      for (const { space, data } of perSpace)
-        for (const n of (data.data?.nodes || [])) {
-          const key = n.name || n.ip; if (seen.has(key)) continue; seen.add(key); out.push({ ...n, _sp: space });
-        }
-      return out;
-    }
-  );
+const PAGE_SIZE = 50;
 
-  const models = useMemo(() => [...new Set((nodes || []).flatMap((n) => asList(n.gpuModels)))].filter(Boolean), [nodes]);
-  const { view, search, setSearch, filters, setFilter, sortKey, sortDir, toggleSort } = useList(nodes || [], {
-    searchText: (n) => [field(n, ["name"], ""), field(n, ["ip", "accessIp"], ""), asList(n.gpuModels).join(" "), asList(n.resourceGroups).join(" "), n._sp?.name].join(" "),
-    sorts: {
-      name: (n) => field(n, ["name"], ""), gpuLeft: (n) => Number(n.gpuLeft) || 0, gpuUsed: (n) => Number(n.gpuUsed) || 0,
-      cpu: (n) => Number(n.cpuRequest) || 0, mem: (n) => Number(n.memoryRequest) || 0, jobs: (n) => (n.jobList || []).length,
-    },
-    initialSort: { key: "gpuLeft", dir: "desc" },
-  });
+/** 节点是集群级资源：筛选、排序、分页、汇总都交给平台原生接口。 */
+export function Nodes({ state: _state }: { state: AppState }) {
+  const [page, setPage] = useState(1);
+  const [group, setGroup] = useState("");
+  const [model, setModel] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
+  const [sort, setSort] = useState("gpu");
+  const [dir, setDir] = useState<"asc" | "desc">("desc");
+  useEffect(() => setPage(1), [group, model, freeOnly, sort, dir]);
 
-  const sum = (k: string) => view.reduce((a, n) => a + (Number(n[k]) || 0), 0);
-  const sh = { active: (k: string) => sortKey === k, dir: sortDir, onSort: toggleSort };
+  const { data: facets } = useCached("node-facets", () => api.nodeFacets());
+  const { data: groups } = useCached<any[]>("node-groups", async () => (await api.idle()).groups || []);
+  const { data, loading, refreshing, error, refresh } = useCached<any>(
+    `nodes:${page}:${group}:${model}:${freeOnly}:${sort}:${dir}`,
+    () => api.nodes({ page, size: PAGE_SIZE, group, model, minGpu: freeOnly ? 1 : 0, sort, dir }),
+    [page, group, model, freeOnly, sort, dir]);
+
+  const nodes: any[] = data?.nodes || [];
+  const sum = data?.summary || {};
+  const total = Number(sum.total) || 0;
+  const onSort = (k: string) => { if (k === sort) setDir((d) => (d === "asc" ? "desc" : "asc")); else { setSort(k); setDir("desc"); } };
+  const groupOptions = (groups || []).filter((g: any, i: number, all: any[]) => all.findIndex((x) => x.rsgroupId === g.rsgroupId) === i);
 
   return (
     <>
-      <PageBar title="节点" right={<button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>} />
-      <Toolbar search={search} onSearch={setSearch} placeholder="搜索 节点名 / IP / 型号 / 资源组">
-        {spaces.length > 1 && (
-          <select className="field w-32" value={filters.space || ""} onChange={(e) => setFilter("space", e.target.value, (n, v) => n._sp?.id === v)}>
-            <option value="">全部空间</option>{spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-        <select className="field w-44" value={filters.model || ""} onChange={(e) => setFilter("model", e.target.value, (n, v) => asList(n.gpuModels).includes(v))}>
-          <option value="">全部 GPU 型号</option>{models.map((m) => <option key={m} value={m}>{m}</option>)}
+      <PageBar title="节点" hint={data ? `${total} 个节点符合条件` : undefined}
+        right={<button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>} />
+      <Toolbar>
+        <select className="field w-44" aria-label="资源组" value={group} onChange={(e) => setGroup(e.target.value)}>
+          <option value="">全部资源组</option>
+          {groupOptions.map((g: any) => <option key={g.rsgroupId} value={g.rsgroupId}>{g.rsgroupName || g.rsgroupId}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-sm text-ink-soft ml-1 cursor-pointer">
-          <input type="checkbox" checked={filters.free === "1"} onChange={(e) => setFilter("free", e.target.checked ? "1" : "", (n) => (Number(n.gpuLeft) || 0) > 0)} />仅有空闲卡
+        <select className="field w-48" aria-label="GPU 型号" value={model} onChange={(e) => setModel(e.target.value)}>
+          <option value="">全部 GPU 型号</option>
+          {(facets?.models || []).map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <label className="flex items-center gap-1.5 text-[13px] text-ink-soft ml-1 cursor-pointer select-none">
+          <input type="checkbox" className="accent-brand" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} />只看有空闲卡的
         </label>
       </Toolbar>
+
+      {error && !data && <div className="card p-4 text-body mb-3">节点列表读取失败：{error}。检查平台连接后点刷新。</div>}
       {loading ? <Spinner /> : <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <Tile label="剩余整卡（筛选内）" value={sum("gpuLeft")} unit="张" tone="mint" />
-          <Tile label="物理 GPU 已用/总量" value={sum("gpuUsed")} unit={`/ ${sum("gpuTotal")}`} />
-          <Tile label="CPU 已用/总量（核）" value={Math.round(sum("cpuRequest"))} unit={`/ ${Math.round(sum("cpuTotal"))}`} tone="amber" />
-          <Tile label="节点数（筛选内）" value={view.length} tone="rose" />
-        </div>
+        <section className="card mb-4 grid grid-cols-2 md:grid-cols-4 divide-x divide-line" aria-label="筛选范围内的资源汇总">
+          <Stat label="节点" sub="当前筛选范围">{total}</Stat>
+          <Stat label="物理 GPU 已用" sub={`共 ${Number(sum.pGpuTotal) || 0} 卡`}>
+            {Number(sum.pGpuUsed) || 0}<span className="text-body font-normal text-ink-faint"> / {Number(sum.pGpuTotal) || 0}</span>
+          </Stat>
+          <Stat label="CPU 已用（核）" sub={`共 ${fmtCpu((Number(sum.cpuTotal) || 0) / 1000)} 核`}>{fmtCpu((Number(sum.cpuUsed) || 0) / 1000)}</Stat>
+          <Stat label="内存已用" sub={`共 ${fmtMiB(Number(sum.memoryTotal) || 0)}`}>{fmtMiB(Number(sum.memoryUsed) || 0)}</Stat>
+        </section>
         <Table head={<>
-          <SortTh sortKey="name" active={sh.active("name")} dir={sortDir} onSort={toggleSort}>节点</SortTh>
-          <Th>空间</Th><Th>GPU 型号</Th>
-          <SortTh sortKey="gpuLeft" active={sh.active("gpuLeft")} dir={sortDir} onSort={toggleSort} num>剩余整卡</SortTh>
-          <SortTh sortKey="gpuUsed" active={sh.active("gpuUsed")} dir={sortDir} onSort={toggleSort} num>物理卡</SortTh>
-          <SortTh sortKey="cpu" active={sh.active("cpu")} dir={sortDir} onSort={toggleSort} num>CPU</SortTh>
-          <SortTh sortKey="mem" active={sh.active("mem")} dir={sortDir} onSort={toggleSort} num>内存</SortTh>
-          <Th>资源组</Th>
-          <SortTh sortKey="jobs" active={sh.active("jobs")} dir={sortDir} onSort={toggleSort} num>任务</SortTh>
+          <Th>节点</Th><Th>GPU 型号</Th>
+          <SortTh sortKey="gpu" active={sort === "gpu"} dir={dir} onSort={onSort} num>空闲卡</SortTh>
+          <Th num>物理卡</Th>
+          <SortTh sortKey="cpu" active={sort === "cpu"} dir={dir} onSort={onSort} num>CPU 已申请</SortTh>
+          <SortTh sortKey="memory" active={sort === "memory"} dir={dir} onSort={onSort} num>内存已申请</SortTh>
+          <Th>资源组</Th><Th num>作业</Th>
         </>}>
-          {view.length ? view.map((n, i) => (
-            <tr key={i} className="hover:bg-canvas/60">
-              <Td><div className="font-semibold">{field(n, ["name"])}</div><div className="text-[11px] text-ink-faint">{field(n, ["ip", "accessIp"], "")}</div></Td>
-              <Td>{n._sp.name}</Td>
-              <Td clip>{asList(n.gpuModels).join(", ") || "-"}</Td>
-              <Td num><b>{n.gpuLeft ?? "-"}</b></Td>
-              <Td num>{n.gpuUsed ?? "-"} / {n.gpuTotal ?? "-"}</Td>
+          {nodes.length ? nodes.map((n) => (
+            <tr key={n.name || n.ip} className="hover:bg-hover" data-node={n.name || n.ip}>
+              <Td><div className="font-medium">{field(n, ["name"])}</div><div className="text-[11px] text-ink-faint">{field(n, ["ip", "accessIp"], "")}</div></Td>
+              <Td clip className="text-ink-soft">{splitList(n.gpuModels).join("、") || "—"}</Td>
+              <Td num><span className={Number(n.gpuLeft) ? "font-medium" : "text-ink-faint"}>{n.gpuLeft ?? "—"}</span></Td>
+              <Td num>{n.gpuUsed ?? "—"} / {n.gpuTotal ?? "—"}</Td>
               <Td num>{fmtCpu(n.cpuRequest)} / {fmtCpu(n.cpuTotal)}</Td>
               <Td num>{fmtMiB(n.memoryRequest)} / {fmtMiB(n.memoryTotal)}</Td>
-              <Td clip>{asList(n.resourceGroups).join(", ") || "-"}</Td>
+              <Td clip className="text-ink-soft">{splitList(n.resourceGroups).join("、") || "—"}</Td>
               <Td num>{(n.jobList || []).length}</Td>
             </tr>
-          )) : <tr><Td className="text-ink-faint">没有匹配的节点</Td></tr>}
+          )) : <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-faint">没有符合条件的节点，换个资源组或型号试试。</td></tr>}
         </Table>
-        <p className="text-xs text-ink-faint mt-3">显示 {view.length} / {(nodes || []).length} 个节点。点表头排序，搜索空格分词。</p>
+        <Pager page={page} size={PAGE_SIZE} total={total} count={nodes.length} busy={refreshing} onPage={setPage} />
       </>}
     </>
   );

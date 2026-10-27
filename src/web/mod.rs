@@ -8,6 +8,7 @@ mod rate_limit;
 mod roles;
 mod routes_admin;
 mod routes_auth;
+mod routes_catalog;
 mod routes_core;
 mod routes_jobs;
 mod routes_templates;
@@ -95,6 +96,9 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
         .route("/api/job/{id}/metrics", get(routes_jobs::get_job_metrics))
         .route("/api/bulk", post(routes_jobs::post_bulk))
         .route("/api/devs", get(routes_workloads::list_devs))
+        .route("/api/images", get(routes_catalog::list_images))
+        .route("/api/nodes", get(routes_catalog::list_nodes))
+        .route("/api/nodes/facets", get(routes_catalog::node_facets))
         .route("/api/idle", get(routes_workloads::get_idle))
         .route("/api/terminal-url", get(routes_workloads::get_terminal_url))
         .route("/api/exec", post(routes_workloads::post_exec))

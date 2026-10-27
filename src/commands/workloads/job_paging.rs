@@ -112,7 +112,7 @@ pub(crate) async fn merged_job_page(sources: Vec<JobSource>, page: u64, size: u6
     let chunk = need.clamp(1, MAX_CHUNK);
     let sources = &sources;
     let (jobs, total, skipped) =
-        merge_pages(sources.len(), page, size, chunk, concurrency, |i, p, s| fetch_native(&sources[i], p, s)).await;
+        merge_pages(sources.len(), page, size, chunk, concurrency, sort_key, |i, p, s| fetch_native(&sources[i], p, s)).await;
     JobPage { jobs, total, skipped }
 }
 
@@ -133,11 +133,13 @@ struct Cursor {
     next_page: u64,
 }
 
-/// k 路归并。fetch(i, pageNum, pageSize) 取第 i 个来源的一个原生页，返回 (条目, 原生总数)。
+/// k 路归并。fetch(i, pageNum, pageSize) 取第 i 个来源的一个原生页，返回 (条目, 原生总数)；
+/// key 必须和各来源的原生顺序一致（大的在前）。
 /// 首轮并发取每个来源的第一页；之后只在某个来源的缓冲耗尽、且它后面确实还有数据时才补取。
 /// 返回 (本页条目, 总数, 失败跳过的来源数)。
-pub(crate) async fn merge_pages<F, Fut>(n: usize, page: u64, size: u64, chunk: u64, concurrency: usize, fetch: F) -> (Vec<Value>, u64, u64)
+pub(crate) async fn merge_pages<F, Fut, K>(n: usize, page: u64, size: u64, chunk: u64, concurrency: usize, key: K, fetch: F) -> (Vec<Value>, u64, u64)
 where
+    K: Fn(&Value) -> (u8, u64),
     F: Fn(usize, u64, u64) -> Fut,
     Fut: Future<Output = Result<(Vec<Value>, u64)>>,
 {
@@ -180,7 +182,7 @@ where
         let best = cursors
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| c.as_ref().and_then(|c| c.buf.front().map(|job| (i, sort_key(job)))))
+            .filter_map(|(i, c)| c.as_ref().and_then(|c| c.buf.front().map(|job| (i, key(job)))))
             .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)));
         let Some((i, _)) = best else { break };
         if let Some(job) = cursors[i].as_mut().and_then(|c| c.buf.pop_front()) {
@@ -210,7 +212,7 @@ mod tests {
         let (jobs, total, skipped) = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()
-            .block_on(merge_pages(data.len(), page, size, chunk, 4, fetch));
+            .block_on(merge_pages(data.len(), page, size, chunk, 4, sort_key, fetch));
         let times = jobs.iter().map(|j| j["createTime"].as_u64().unwrap()).collect();
         (times, total, skipped, calls.into_inner())
     }
@@ -257,7 +259,7 @@ mod tests {
             async move { Ok::<_, anyhow::Error>((items, total)) }
         };
         let (jobs, total, _) = tokio::runtime::Builder::new_current_thread().build().unwrap()
-            .block_on(merge_pages(2, 1, 3, 3, 2, fetch));
+            .block_on(merge_pages(2, 1, 3, 3, 2, sort_key, fetch));
         let times: Vec<u64> = jobs.iter().map(|j| j["createTime"].as_u64().unwrap()).collect();
         assert_eq!((times, total), (vec![50, 90, 70], 3));
     }

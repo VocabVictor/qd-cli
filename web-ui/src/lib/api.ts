@@ -57,6 +57,13 @@ export const api = {
     qpost("/api/login", { username, password, ldap, remember }),
   logout: () => qpost("/api/logout"),
   idle: () => qget("/api/idle"),
+  /** 节点（集群级）走平台原生分页：group 资源组 ID，model 完整 GPU 型号，minGpu 至少空闲几卡，sort gpu/cpu/memory。 */
+  nodes: (o: { page?: number; size?: number; group?: string; model?: string; minGpu?: number; sort?: string; dir?: string } = {}) =>
+    qget(`/api/nodes?${toQuery({ page: o.page || 1, size: o.size || 50, ...o })}`),
+  nodeFacets: () => qget<{ models: string[]; groups: string[] }>("/api/nodes/facets"),
+  /** 镜像仓库跨空间走平台原生分页：source 为 current/public/shared/mine，q 为仓库名关键字。 */
+  images: (o: { page?: number; size?: number; source?: string; q?: string; space?: string } = {}) =>
+    qget(`/api/images?${toQuery({ page: o.page || 1, size: o.size || 50, ...o })}`),
   /** 作业列表走平台原生分页：status 为逗号分隔的平台状态，q 为作业名关键字。 */
   jobs: (o: { scope?: string; page?: number; size?: number; status?: string; q?: string; space?: string } = {}) => {
     const p = new URLSearchParams({ scope: o.scope || "mine", page: String(o.page || 1), size: String(o.size || 50) });
@@ -111,6 +118,17 @@ export const fmtTime = (t?: any) => {
   const d = new Date(typeof t === "number" && t < 1e12 ? t * 1000 : t);
   return isNaN(d.getTime()) ? String(t) : d.toLocaleString("zh-CN", { hour12: false });
 };
+/** 平台的 gpuModels / resourceGroups 是逗号分隔的字符串，也兼容数组。 */
+export const splitList = (v: any): string[] =>
+  Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+/** 拼查询串，空值不带。 */
+const toQuery = (o: Record<string, any>) => {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== null && v !== "" && v !== 0) p.set(k, String(v));
+  return p.toString();
+};
+
 export const asList = (v: any): any[] => Array.isArray(v) ? v : (v === undefined || v === null || v === "" ? [] : [v]);
 export const field = (o: any, keys: string[], dflt: any = "-") => {
   for (const k of keys) { const v = o?.[k]; if (v !== undefined && v !== null && v !== "") return v; }

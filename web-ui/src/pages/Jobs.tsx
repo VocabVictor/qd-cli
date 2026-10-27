@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus } from "lucide-react";
 import { api, AppState, spacesOf, fmtTime, field, canManageJob, getMe } from "../lib/api";
 import { useCached, dropCache } from "../lib/cache";
-import { PageBar, Spinner, Badge, Toolbar, StatusDot, Th, useToast } from "../components/ui";
+import { PageBar, Spinner, Badge, Toolbar, StatusDot, Th, Pager, useToast } from "../components/ui";
 import { Spark } from "../components/viz";
 import { Monitor, MonitorJob } from "../components/Monitor";
 import { CreateForm } from "../components/CreateForm";
@@ -54,7 +54,6 @@ export function Jobs({ state }: { state: AppState }) {
 
   const shown = data?.list || [];
   const total = data?.total || 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // 运行中的作业补一条利用率迷你曲线（最多 12 个，渲染后再拉）
   useEffect(() => {
@@ -197,14 +196,11 @@ export function Jobs({ state }: { state: AppState }) {
         </div>
       )}
       {data && (
-        <div className="flex items-center gap-3 mt-2 text-[12px] text-ink-faint" data-testid="pager">
-          <span>共 {total} 个，第 {(page - 1) * PAGE_SIZE + (shown.length ? 1 : 0)}–{(page - 1) * PAGE_SIZE + shown.length} 个。点作业名查看监控、日志和终端。</span>
-          {(data.skipped > 0 || data.failed.length > 0) && <span className="text-warn">{data.skipped ? `${data.skipped} 个项目读取失败未计入` : ""}{data.failed.length ? `空间 ${data.failed.join("、")} 读取失败` : ""}</span>}
-          <span className="flex-1" />
-          <button className="btn btn-mini" aria-label="上一页" disabled={page <= 1 || refreshing} onClick={() => setPage((n) => n - 1)}><ChevronLeft size={13} /></button>
-          <span className="tabular-nums text-ink-soft">{page} / {pages}</span>
-          <button className="btn btn-mini" aria-label="下一页" disabled={page >= pages || refreshing} onClick={() => setPage((n) => n + 1)}><ChevronRight size={13} /></button>
-        </div>
+        <Pager page={page} size={PAGE_SIZE} total={total} count={shown.length} busy={refreshing} onPage={setPage}
+          note={<>
+            <span>点作业名查看监控、日志和终端。</span>
+            {(data.skipped > 0 || data.failed.length > 0) && <span className="text-warn">{data.skipped ? `${data.skipped} 个项目读取失败未计入` : ""}{data.failed.length ? `空间 ${data.failed.join("、")} 读取失败` : ""}</span>}
+          </>} />
       )}
 
       <Monitor job={mon?.job || null} initialTab={mon?.tab} onClose={() => setMon(null)} />

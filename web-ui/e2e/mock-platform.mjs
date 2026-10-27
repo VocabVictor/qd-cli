@@ -19,8 +19,14 @@ export function createPlatform() {
   ];
   const nodes = groups.flatMap((g) => g.free.map((free, i) => ({
     name: `${g.id}-node-${String(i + 1).padStart(2, "0")}`, ip: `10.0.${g.id.slice(1)}.${i + 1}`,
-    gpuLeft: free, gpuTotal: g.per, gpuModels: [g.card], resourceGroups: [g.name], space: g.space, group: g.id,
+    gpuLeft: free, gpuTotal: g.per, gpuUsed: g.per - free, gpuModels: g.card, resourceGroups: g.name, space: g.space, group: g.id,
+    cpuTotal: 128, cpuRequest: 64 - free * 4, memoryTotal: 1048576, memoryRequest: 524288 - free * 8192, jobList: [],
   })));
+  for (let i = 0; i < 48; i++) {
+    nodes.push({ name: `cpu-node-${String(i + 1).padStart(2, "0")}`, ip: `10.0.9.${i + 1}`, gpuLeft: 0, gpuTotal: 0, gpuUsed: 0,
+      gpuModels: "", resourceGroups: "CPU 通用池", space: "s2", group: "g4", cpuTotal: 96, cpuRequest: 10 + (i % 7) * 9,
+      memoryTotal: 786432, memoryRequest: 65536 + (i % 5) * 65536, jobList: [] });
+  }
   const projects = [
     { projectId: "p1", projectName: "训练空间", space: "s1", jobenvId: 501 },
     { projectId: "p2", projectName: "推理空间", space: "s2", jobenvId: 0 },
@@ -36,7 +42,15 @@ export function createPlatform() {
     jobs.push({ jobId: String(870000 + i), jobName: `sweep-lr-${String(i).padStart(3, "0")}`, status, statGpu: 1, createTime: now - (30 + i) * 3600e3,
       projectId: i % 2 ? "p1" : "p2", space: i % 2 ? "s1" : "s2", rsgroupId: i % 2 ? "g1" : "g3", gpu: 1, gpuType: i % 2 ? "A100-80G" : "L40S" });
   }
-  const listCalls = [];
+  const listCalls = [], nodeCalls = [], imageCalls = [];
+  // 镜像仓库：s1 有 pytorch（id 1）等，s2 若干，id 全局唯一、互不重叠
+  const repos = [{ imageRepositoryId: 1, originalName: "pytorch", repositoryName: "gemini/pytorch", accessType: 3, spaceId: "s1", spaceName: "训练空间", imageNum: 2, displayName: "admin", createTime: "2026-01-01 10:00:00" },
+    { imageRepositoryId: 2, originalName: "vllm", repositoryName: "gemini/vllm", accessType: 3, spaceId: "s1", spaceName: "训练空间", imageNum: 1, displayName: "admin", createTime: "2026-01-02 10:00:00" }];
+  for (let i = 3; i <= 100; i++) {
+    const sp = i % 10 < 7 ? "s1" : "s2";
+    repos.push({ imageRepositoryId: i, originalName: `team-img-${String(i).padStart(3, "0")}`, repositoryName: `team/img-${i}`, accessType: i % 4 === 0 ? 2 : 3,
+      spaceId: sp, spaceName: sp === "s1" ? "训练空间" : "推理空间", imageNum: 1 + (i % 3), displayName: "bob", createTime: `2026-0${1 + (i % 9)}-1${i % 10} 09:00:00` });
+  }
   // 与平台一致：未结束的作业排最前，其余按创建时间倒序
   const active = (j) => (["RUNNING", "CREATED", "WAITING", "STOPPING"].includes(j.status) ? 1 : 0);
   let seq = 900000;
@@ -63,8 +77,20 @@ export function createPlatform() {
       return ok({ cpu: 96, memory: 393216, gpuCount: g && g.free.length ? Math.max(...g.free) : 0 });
     }
     if (path === "/jobQueue/node/job/list") {
-      const list = nodes.filter((n) => (query.rsgroup ? n.group === query.rsgroup : n.space === sp));
-      return ok({ nodes: list, total: list.length });
+      // 与真实平台一致：集群级（不分空间）；rsgroup / gpuModel（精确）/ leftGpuCount（至少）筛选；
+      // sortField 只认 left_gpu_count / left_cpu / left_memory；返回 total 与筛选后的汇总
+      const field = { left_gpu_count: (n) => n.gpuLeft, left_cpu: (n) => n.cpuTotal - n.cpuRequest, left_memory: (n) => n.memoryTotal - n.memoryRequest };
+      if (query.sortField && !field[query.sortField]) return { code: 100100, msg: "请求参数错误" };
+      const f = field[query.sortField || "left_gpu_count"], asc = query.sortOrder === "asc";
+      const list = nodes.filter((n) => (!query.rsgroup || n.group === query.rsgroup) && (!query.gpuModel || n.gpuModels === query.gpuModel)
+        && (!query.leftGpuCount || n.gpuLeft >= Number(query.leftGpuCount)))
+        .sort((a, b) => (asc ? f(a) - f(b) : f(b) - f(a)) || a.name.localeCompare(b.name));
+      const num = Math.max(1, Number(query.pageNum) || 1), size = Math.max(1, Number(query.pageSize) || 10);
+      nodeCalls.push({ pageNum: num, pageSize: size, rsgroup: query.rsgroup || "", gpuModel: query.gpuModel || "", leftGpuCount: Number(query.leftGpuCount) || 0, sortField: query.sortField || "" });
+      const sum = (k) => list.reduce((a, n) => a + n[k], 0);
+      return ok({ nodes: list.slice((num - 1) * size, num * size), total: list.length,
+        pGpuTotal: sum("gpuTotal"), pGpuUsed: sum("gpuUsed"), cpuTotal: sum("cpuTotal") * 1000, cpuUsed: sum("cpuRequest") * 1000,
+        memoryTotal: sum("memoryTotal"), memoryUsed: sum("memoryRequest"), orionRatioTotal: 0, orionRatioUsed: 0 });
     }
     if (path === "/project/list") {
       const list = projects.filter((p) => p.space === sp).map((p) => ({ ...p, spaceId: p.space, jobCount: jobs.filter((j) => j.projectId === p.projectId).length }));
@@ -98,8 +124,19 @@ export function createPlatform() {
     }
     if ((m = path.match(/^\/job\/cancel\/(\w+)$/))) { const j = jobs.find((x) => x.jobId === m[1]); if (j) j.status = "STOPPED"; return ok({}); }
     if ((m = path.match(/^\/job\/delete\/(\w+)$/))) { const i = jobs.findIndex((x) => x.jobId === m[1]); if (i >= 0) jobs.splice(i, 1); return ok({}); }
-    if (path === "/imageRepository/list") return ok({ imageList: [{ imageRepositoryId: "r1", originalName: "pytorch" }, { imageRepositoryId: "r2", originalName: "vllm" }] });
-    if ((m = path.match(/^\/imageRepository\/detail\/(\w+)$/))) return ok({ imageList: m[1] === "r1" ? [{ imageId: 11, imageTag: "2.4-cuda12.4" }, { imageId: 12, imageTag: "2.3-cuda12.1" }] : [{ imageId: 21, imageTag: "0.6.3" }] });
+    if (path === "/imageRepository/list") {
+      // 与真实平台一致：每个空间的仓库互不重叠，按 imageRepositoryId 倒序原生分页；
+      // source=public 只要公开、shared 只要空间共享、mine 我创建的（这里为空）；keyWords 匹配仓库名
+      const want = { public: 3, shared: 2 }[query.source];
+      const kw = String(query.keyWords || "").toLowerCase();
+      // 真实平台：public 是全局列表，每个空间返回同一份
+      const all = repos.filter((r) => (query.source === "public" || r.spaceId === sp) && query.source !== "mine" && (!want || r.accessType === want) && (!kw || r.originalName.toLowerCase().includes(kw)))
+        .sort((a, b) => b.imageRepositoryId - a.imageRepositoryId);
+      const num = Math.max(1, Number(query.pageNum) || 1), size = Math.max(1, Number(query.pageSize) || 10);
+      imageCalls.push({ space: sp, pageNum: num, pageSize: size, source: query.source || "", keyWords: kw });
+      return ok({ imageList: all.slice((num - 1) * size, num * size), listCount: all.length });
+    }
+    if ((m = path.match(/^\/imageRepository\/detail\/(\w+)$/))) return ok({ imageList: m[1] === "1" ? [{ imageId: 11, imageTag: "2.4-cuda12.4" }, { imageId: 12, imageTag: "2.3-cuda12.1" }] : [{ imageId: 21, imageTag: "0.6.3" }] });
     if (path === "/quota/available") return ok({ gpuCardCnt: 64, usedGpuCardCnt: 9, leftGpuCardCnt: 55, gpuquotaDataList: [{ cardCnt: 64 }], cpu: 1024, usedCpu: 80, leftCpu: 944, memory: 4194304, usedMemory: 327680, leftMemory: 3866624, storage: 10240000, usedStorage: 204800, leftStorage: 10035200 });
     if ((m = path.match(/^\/jobenv\/refresh\/(\w+)$/))) return ok({ status: "RUNNING", devJobDetail: { taskroleList: [{ instanceList: [{ terminalUrl: terminalUrl("dev" + m[1]) }] }] } });
     if (path === "/sftp/channel/list") return ok({ sftpList: [], listCount: 0 });
@@ -204,7 +241,7 @@ ws.onclose=function(){out.textContent+="\\n[closed]"};inp.addEventListener("keyd
   });
 
   return {
-    jobs, submitted, nodes, listCalls,
+    jobs, submitted, nodes, repos, listCalls, nodeCalls, imageCalls,
     listen: (p) => new Promise((resolve) => server.listen(p, "127.0.0.1", () => { port = server.address().port; resolve(`http://127.0.0.1:${port}`); })),
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()); }),
   };

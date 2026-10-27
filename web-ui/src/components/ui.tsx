@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={clsx("card", className)}>{children}</div>;
@@ -29,6 +30,35 @@ export function PageBar({ title, hint, right }: { title: string; hint?: string; 
       {hint && <span className="text-aux text-ink-faint">{hint}</span>}
       <div className="flex-1" />
       {right}
+    </div>
+  );
+}
+
+/** 资源摘要条里的一格：标签 + 大号数字 + 一行补充说明。 */
+export function Stat({ label, children, sub }: { label: string; children: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="px-5 py-3 min-w-0">
+      <div className="text-aux text-ink-soft">{label}</div>
+      <div className="text-[20px] leading-7 font-semibold tabular-nums">{children}</div>
+      {sub && <div className="text-[11px] text-ink-faint truncate">{sub}</div>}
+    </div>
+  );
+}
+
+/** 列表底部的分页条：总数、本页范围、上一页 / 下一页。 */
+export function Pager({ page, size, total, count, busy, unit = "个", note, onPage }: {
+  page: number; size: number; total: number; count: number; busy?: boolean; unit?: string; note?: ReactNode; onPage: (n: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const from = (page - 1) * size + (count ? 1 : 0);
+  return (
+    <div className="flex items-center gap-3 mt-2 text-[12px] text-ink-faint" data-testid="pager">
+      <span>共 {total} {unit}，第 {from}–{(page - 1) * size + count} {unit}。</span>
+      {note}
+      <span className="flex-1" />
+      <button className="btn btn-mini" aria-label="上一页" disabled={page <= 1 || busy} onClick={() => onPage(page - 1)}><ChevronLeft size={13} /></button>
+      <span className="tabular-nums text-ink-soft">{page} / {pages}</span>
+      <button className="btn btn-mini" aria-label="下一页" disabled={page >= pages || busy} onClick={() => onPage(page + 1)}><ChevronRight size={13} /></button>
     </div>
   );
 }

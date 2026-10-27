@@ -26,25 +26,25 @@ pub(crate) async fn resource_node_command(
     let needle = args.pop().context("缺少 NODE_OR_IP")?;
     let group = args.take_option("--group")?;
     args.ensure_empty()?;
-    let mut query = json!({
-        "pageNum": 1,
-        "pageSize": 1000,
-        "sortField": "left_gpu_count",
-        "sortOrder": "desc"
-    });
-    if let Some(group) = group {
-        insert_value(&mut query, "rsgroup", Value::String(group))?;
+    // 按原生分页逐页找，直到找到或翻完平台给出的 total
+    let mut found = None;
+    for page in 1..=50u64 {
+        let mut query = json!({"pageNum": page, "pageSize": 200, "sortField": "left_gpu_count", "sortOrder": "desc"});
+        if let Some(group) = &group {
+            insert_value(&mut query, "rsgroup", Value::String(group.clone()))?;
+        }
+        let response = api.get(Service::Core, NODE_RESOURCE_PATH, query).await?;
+        let nodes = response.pointer("/data/nodes").and_then(Value::as_array).cloned().unwrap_or_default();
+        let total = response.pointer("/data/total").and_then(value_u64).unwrap_or(0);
+        if let Some(node) = nodes.iter().find(|node| node_matches(node, &needle)) {
+            found = Some(node.clone());
+            break;
+        }
+        if nodes.len() < 200 || page * 200 >= total {
+            break;
+        }
     }
-    let response = api.get(Service::Core, NODE_RESOURCE_PATH, query).await?;
-    let node = response
-        .pointer("/data/nodes")
-        .and_then(Value::as_array)
-        .and_then(|nodes| {
-            nodes
-                .iter()
-                .find(|node| node_matches(node, &needle))
-                .cloned()
-        })
+    let node = found
         .with_context(|| format!("没有找到节点: {needle}"))?;
     if compact {
         print_json(&node, true)

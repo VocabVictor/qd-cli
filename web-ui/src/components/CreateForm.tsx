@@ -100,8 +100,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
 
   useEffect(() => {
     if (!open) return;
-    pcall("GET", "core", "/imageRepository/list", { spaceId: space, source: "current", keyWords: "", pageNum: 1, pageSize: 500 }, space)
-      .then((d) => setRepos(d.data?.imageList || [])).catch(() => setRepos([]));
+    api.images({ space, size: 500 }).then((d) => setRepos(d.data?.imageList || [])).catch(() => setRepos([]));
   }, [open, space]);
 
   useEffect(() => {
