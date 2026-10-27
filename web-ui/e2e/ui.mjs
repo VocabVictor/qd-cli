@@ -250,6 +250,49 @@ try {
     check("Esc 能关掉监控抽屉", (await B.page.locator("[role=dialog]").count()) === 0);
   });
 
+  // ---------- 6b. 作业页：平台原生分页、状态计数、关键字搜索 ----------
+  await step("作业分页", async () => {
+    const pg = B.page;
+    const rows = () => pg.locator("tbody tr[data-job]");
+    const ids = async () => (await rows().evaluateAll((els) => els.map((e) => e.getAttribute("data-job"))));
+    const act = (j) => (["RUNNING", "CREATED", "WAITING", "STOPPING"].includes(j.status) ? 1 : 0);
+    const byTime = [...platform.jobs].sort((a, b) => (act(b) - act(a)) || (b.createTime - a.createTime)).map((j) => j.jobId);
+    await pg.getByRole("tab", { name: /全部/ }).click();
+    await pg.waitForFunction(() => document.querySelectorAll("tbody tr[data-job]").length === 50, null, { timeout: 10000 });
+    check(`「全部」计数等于平台作业总数 ${platform.jobs.length}`, (await pg.getByRole("tab", { name: /全部/ }).innerText()).includes(String(platform.jobs.length)));
+    check("第 1 页 50 条，跨项目按平台原生顺序（未结束在前，再按创建时间倒序）", JSON.stringify(await ids()) === JSON.stringify(byTime.slice(0, 50)));
+    check("分页条显示总数", (await pg.getByTestId("pager").innerText()).includes(`共 ${platform.jobs.length} 个`));
+    const before = platform.listCalls.length;
+    await pg.getByRole("button", { name: "下一页" }).click();
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[50], { timeout: 10000 });
+    check("第 2 页接着第 1 页的顺序", JSON.stringify(await ids()) === JSON.stringify(byTime.slice(50, 100)));
+    const lastPage = Math.ceil(platform.jobs.length / 50);
+    for (let n = 2; n < lastPage; n++) {
+      await pg.getByRole("button", { name: "下一页" }).click();
+      await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[n * 50], { timeout: 10000 });
+    }
+    check("最后一页只剩余下的条数", (await rows().count()) === platform.jobs.length - (lastPage - 1) * 50);
+    check("下一页按钮在最后一页禁用", await pg.getByRole("button", { name: "下一页" }).isDisabled());
+    const calls = platform.listCalls.slice(before);
+    check("翻页时每次向平台只要需要的量（pageSize ≤ 页码 × 50）", calls.length > 0 && calls.every((c) => c.pageSize <= lastPage * 50), JSON.stringify(calls.slice(0, 3)));
+
+    await pg.getByRole("tab", { name: /已停止/ }).click();
+    const stopped = platform.jobs.filter((j) => ["STOPPING", "STOPPED", "FAILED"].includes(j.status)).length;
+    await pg.waitForFunction(() => document.querySelector("[data-testid=pager]")?.textContent?.includes("第 1–"), null, { timeout: 10000 });
+    check(`「已停止」按平台状态筛选，共 ${stopped} 个`, (await pg.getByTestId("pager").innerText()).includes(`共 ${stopped} 个`));
+    check("已停止页里没有运行中的作业", (await pg.locator("tbody").innerText()).includes("RUNNING") === false);
+    check("状态筛选用平台的 jobStatus 参数", platform.listCalls.some((c) => c.jobStatus === "FAILED"));
+
+    await pg.getByRole("tab", { name: /全部/ }).click();
+    await pg.fill("input[aria-label='按作业名搜索']", "sweep-lr-007");
+    await pg.waitForFunction(() => document.querySelectorAll("tbody tr[data-job]").length === 1, null, { timeout: 10000 });
+    check("关键字搜索交给平台 keyWords，结果只剩 1 条", (await rows().first().innerText()).includes("sweep-lr-007") && platform.listCalls.some((c) => c.keyWords === "sweep-lr-007"));
+    await pg.fill("input[aria-label='按作业名搜索']", "");
+    await pg.getByRole("tab", { name: /运行中/ }).click();
+    await pg.waitForSelector(`tr[data-job='${jobId}']`, { timeout: 10000 });
+    await shot(pg, "06b-jobs-paged.png");
+  });
+
   // ---------- 7. 取消自己的作业后释放配额 ----------
   await step("取消作业", async () => {
     B.page.once("dialog", (d) => d.accept());

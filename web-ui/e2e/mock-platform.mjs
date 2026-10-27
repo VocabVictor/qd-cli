@@ -30,6 +30,15 @@ export function createPlatform() {
     { jobId: "880001", jobName: "llama-sft-baseline", status: "RUNNING", statGpu: 8, createTime: now - 3 * 3600e3, projectId: "p1", space: "s1", rsgroupId: "g1", gpu: 8, gpuType: "A100-80G" },
     { jobId: "880002", jobName: "eval-mmlu", status: "SUCCEEDED", statGpu: 1, createTime: now - 26 * 3600e3, projectId: "p1", space: "s1", rsgroupId: "g1", gpu: 1, gpuType: "A100-80G" },
   ];
+  // 额外造 120 个历史作业，覆盖多页分页、跨项目归并和状态筛选
+  for (let i = 0; i < 120; i++) {
+    const status = ["SUCCEEDED", "FAILED", "STOPPED"][i % 3];
+    jobs.push({ jobId: String(870000 + i), jobName: `sweep-lr-${String(i).padStart(3, "0")}`, status, statGpu: 1, createTime: now - (30 + i) * 3600e3,
+      projectId: i % 2 ? "p1" : "p2", space: i % 2 ? "s1" : "s2", rsgroupId: i % 2 ? "g1" : "g3", gpu: 1, gpuType: i % 2 ? "A100-80G" : "L40S" });
+  }
+  const listCalls = [];
+  // 与平台一致：未结束的作业排最前，其余按创建时间倒序
+  const active = (j) => (["RUNNING", "CREATED", "WAITING", "STOPPING"].includes(j.status) ? 1 : 0);
   let seq = 900000;
   let port = 0;
   const submitted = [];
@@ -57,8 +66,20 @@ export function createPlatform() {
       const list = nodes.filter((n) => (query.rsgroup ? n.group === query.rsgroup : n.space === sp));
       return ok({ nodes: list, total: list.length });
     }
-    if (path === "/project/list") return ok({ projectList: projects.filter((p) => p.space === sp), listCount: 1 });
-    if ((m = path.match(/^\/project\/job\/list\/(\w+)$/))) return ok({ jobList: jobs.filter((j) => j.projectId === m[1]) });
+    if (path === "/project/list") {
+      const list = projects.filter((p) => p.space === sp).map((p) => ({ ...p, spaceId: p.space, jobCount: jobs.filter((j) => j.projectId === p.projectId).length }));
+      return ok({ projectList: list, listCount: list.length });
+    }
+    if ((m = path.match(/^\/project\/job\/list\/(\w+)$/))) {
+      // 与真实平台一致：jobStatus 单个状态、大小写不敏感；keyWords 匹配作业名；按创建时间倒序原生分页
+      const want = query.jobStatus ? String(query.jobStatus).toUpperCase() : "";
+      const kw = query.keyWords ? String(query.keyWords).toLowerCase() : "";
+      const all = jobs.filter((j) => j.projectId === m[1] && (!want || j.status === want) && (!kw || j.jobName.toLowerCase().includes(kw)))
+        .sort((a, b) => (active(b) - active(a)) || (b.createTime - a.createTime));
+      const num = Math.max(1, Number(query.pageNum) || 1), size = Math.max(1, Number(query.pageSize) || 10);
+      listCalls.push({ project: m[1], pageNum: num, pageSize: size, jobStatus: want, keyWords: kw });
+      return ok({ jobList: all.slice((num - 1) * size, num * size), listCount: all.length });
+    }
     if (path === "/job/new" && method === "POST") {
       const roles = body.taskroles || [];
       const gpu = roles.reduce((a, r) => a + (Number(r.gpu) || 0) * (Number(r.instance) || 1), 0);
@@ -183,7 +204,7 @@ ws.onclose=function(){out.textContent+="\\n[closed]"};inp.addEventListener("keyd
   });
 
   return {
-    jobs, submitted, nodes,
+    jobs, submitted, nodes, listCalls,
     listen: (p) => new Promise((resolve) => server.listen(p, "127.0.0.1", () => { port = server.address().port; resolve(`http://127.0.0.1:${port}`); })),
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()); }),
   };

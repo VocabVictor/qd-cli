@@ -152,7 +152,7 @@ pub(crate) async fn dev_web_terminal(
         return Ok(());
     }
 
-    let (visible, exit_code) = run_web_terminal_command(&mut websocket, remote_command).await?;
+    let (visible, exit_code) = run_terminal_command(&mut websocket, remote_command).await?;
     if !visible.is_empty() {
         println!("{visible}");
     }
@@ -163,7 +163,7 @@ pub(crate) async fn dev_web_terminal(
 }
 
 /// 在已连接的网页终端里执行一条命令，捕获输出与退出码（不打印、不因非零退出报错）。
-pub(crate) async fn run_web_terminal_command(
+pub(crate) async fn run_terminal_command(
     websocket: &mut TerminalSocket,
     remote_command: &[String],
 ) -> Result<(String, i32)> {

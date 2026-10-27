@@ -1,5 +1,7 @@
 use crate::*;
 
+/// 作用域内全部项目的作业，按创建时间倒序分页。走平台原生分页（见 job_paging），
+/// 只取目标页需要的数据；status 可以是逗号分隔的多个平台状态（如 STOPPED,FAILED）。
 pub(crate) async fn list_scoped_jobs(
     api: &ApiClient,
     config: &Config,
@@ -7,83 +9,37 @@ pub(crate) async fn list_scoped_jobs(
     pagination: &Value,
     status: Option<&str>,
 ) -> Result<Value> {
-    let projects = scoped_projects(api, scope).await?;
-    let mut pending = VecDeque::new();
-    for project in projects {
-        let project_id = field_text(&project, &["projectId", "id"]);
-        if project_id == "-" {
-            continue;
-        }
-        validate_id(&project_id, "PROJECT_ID")?;
-        let project_name = field_text(&project, &["projectName", "name"]);
-        pending.push_back((project_id, project_name));
-    }
-
-    let mut set = JoinSet::new();
-    let mut jobs = Vec::new();
-    // shared/public/all 范围下部分项目对当前账号无查询权限（平台错误 101000），
-    // 单个项目失败只计数跳过，不让整个聚合报废。
-    let mut skipped = 0u64;
-    let limit = config.concurrency.max(1);
-    while !pending.is_empty() || !set.is_empty() {
-        while set.len() < limit {
-            let Some((project_id, project_name)) = pending.pop_front() else {
-                break;
-            };
-            let client = api.clone();
-            let status = status.map(str::to_owned);
-            set.spawn(async move {
-                let path = format!("/project/job/list/{project_id}");
-                let mut query = json!({"pageNum": 1, "pageSize": 1000});
-                if let Some(status) = status {
-                    query["status"] = Value::String(status);
-                }
-                let response = client.get(Service::Core, &path, query).await?;
-                Ok::<_, anyhow::Error>((project_id, project_name, response))
-            });
-        }
-        if let Some(joined) = set.join_next().await {
-            match joined.context("查询我的任务失败")? {
-                Ok((project_id, project_name, response)) => {
-                    for mut job in
-                        response_array(&response, &["/data/jobList", "/data/list"]).to_vec()
-                    {
-                        if let Some(object) = job.as_object_mut() {
-                            object
-                                .entry("projectId")
-                                .or_insert_with(|| Value::String(project_id.clone()));
-                            object
-                                .entry("projectName")
-                                .or_insert_with(|| Value::String(project_name.clone()));
-                        }
-                        jobs.push(job);
-                    }
-                }
-                Err(_) => skipped += 1,
-            }
-        }
-    }
-
-    jobs.sort_by(|left, right| {
-        value_u64(right.get("createTime").unwrap_or(&Value::Null))
-            .cmp(&value_u64(left.get("createTime").unwrap_or(&Value::Null)))
-    });
-    let total = jobs.len();
-    let page = pagination
-        .get("pageNum")
-        .and_then(Value::as_u64)
-        .unwrap_or(1) as usize;
-    let size = pagination
-        .get("pageSize")
-        .and_then(Value::as_u64)
-        .unwrap_or(100) as usize;
-    let start = page.saturating_sub(1).saturating_mul(size).min(total);
-    let job_list = jobs.into_iter().skip(start).take(size).collect::<Vec<_>>();
+    let page = pagination.get("pageNum").and_then(value_u64).unwrap_or(1).max(1);
+    let size = pagination.get("pageSize").and_then(value_u64).unwrap_or(100).clamp(1, 1000);
+    let statuses = parse_statuses(status)?;
+    let sources = job_sources(api, scope, &statuses, None, serde_json::Map::new()).await?;
+    let result = merged_job_page(sources, page, size, config.concurrency).await;
     Ok(json!({
         "code": 0,
         "msg": "操作成功",
-        "data": {"listCount": total, "jobList": job_list, "scope": scope, "skippedProjects": skipped}
+        "data": {"listCount": result.total, "jobList": result.jobs, "scope": scope, "skippedProjects": result.skipped}
     }))
+}
+
+/// 逗号分隔的平台状态名，统一大写；只允许字母和下划线，最多 8 个。
+pub(crate) fn parse_statuses(raw: Option<&str>) -> Result<Vec<String>> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for item in raw.split(',').map(str::trim).filter(|item| !item.is_empty()) {
+        if !item.chars().all(|c| c.is_ascii_alphabetic() || c == '_') {
+            bail!("状态只能是平台状态名（如 RUNNING、FAILED），用逗号分隔");
+        }
+        let item = item.to_ascii_uppercase();
+        if !out.contains(&item) {
+            out.push(item);
+        }
+    }
+    if out.len() > 8 {
+        bail!("一次最多筛选 8 个状态");
+    }
+    Ok(out)
 }
 
 pub(crate) async fn job_show(api: &ApiClient, id: &str) -> Result<Value> {

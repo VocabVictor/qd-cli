@@ -1,20 +1,21 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus } from "lucide-react";
+import { RefreshCw, Loader2, Plus, Terminal as TermIcon, CopyPlus, ChevronLeft, ChevronRight } from "lucide-react";
 import { api, AppState, spacesOf, fmtTime, field, canManageJob, getMe } from "../lib/api";
 import { useCached, dropCache } from "../lib/cache";
-import { useList } from "../lib/table";
-import { PageBar, Spinner, Badge, Toolbar, StatusDot, SortTh, Th, useToast } from "../components/ui";
+import { PageBar, Spinner, Badge, Toolbar, StatusDot, Th, useToast } from "../components/ui";
 import { Spark } from "../components/viz";
 import { Monitor, MonitorJob } from "../components/Monitor";
 import { CreateForm } from "../components/CreateForm";
 
-const FILTERS: [string, string, (s: string) => boolean][] = [
-  ["running", "运行中", (s) => s === "RUNNING"],
-  ["waiting", "排队中", (s) => /WAIT|QUEU|PEND|CREAT|START|INIT/.test(s)],
-  ["succeeded", "已完成", (s) => /SUCCEED|SUCCESS/.test(s)],
-  ["stopped", "已停止", (s) => /STOP|CANCEL|DELET|FAIL|ERROR/.test(s)],
-  ["all", "全部", () => true],
+// 平台原生状态（来自平台前端的枚举）。筛选、计数、分页都交给平台做。
+const FILTERS: [string, string, string][] = [
+  ["running", "运行中", "RUNNING"],
+  ["waiting", "排队中", "CREATED,WAITING"],
+  ["succeeded", "已完成", "SUCCEEDED"],
+  ["stopped", "已停止", "STOPPING,STOPPED,FAILED"],
+  ["all", "全部", ""],
 ];
+const PAGE_SIZE = 50;
 const st = (j: any) => String(field(j, ["status"], "")).toUpperCase();
 const gpuOf = (j: any) => Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0;
 const NOT_MINE = "不是你通过 qd web 提交的作业，只能查看";
@@ -25,20 +26,35 @@ export function Jobs({ state }: { state: AppState }) {
   const me = getMe();
   const [scope, setScope] = useState("mine");
   const [filter, setFilterKey] = useState("running");
+  const [space, setSpace] = useState("");
+  const [input, setInput] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const [mon, setMon] = useState<{ job: MonitorJob; tab?: "metrics" | "terminal" } | null>(null);
   const [create, setCreate] = useState(false);
   const [preset, setPreset] = useState<any>(null);
   const [util, setUtil] = useState<Record<string, number[]>>({});
 
-  const { data: all, loading, refreshing, error, refresh } = useCached<any[]>(
-    `jobs:${scope}`, async () => { const d = await api.jobs(scope, 500); return d.data?.jobList || []; }, [scope]);
+  // 关键字输入防抖 300ms 再发给平台；换筛选条件时回到第一页
+  useEffect(() => { const t = setTimeout(() => setQ(input.trim()), 300); return () => clearTimeout(t); }, [input]);
+  useEffect(() => setPage(1), [scope, filter, space, q]);
 
-  const { view, search, setSearch, filters, setFilter, sortKey, sortDir, toggleSort } = useList(all || [], {
-    searchText: (j) => [field(j, ["jobName", "name"], ""), field(j, ["jobId", "id"], ""), field(j, ["projectName"], ""), st(j), j.spaceName || "", j.qdOwner || ""].join(" "),
-    sorts: { created: (j) => Number(new Date(j.createTime).getTime()) || 0, gpu: gpuOf, name: (j) => String(field(j, ["jobName", "name"], "")) },
-    initialSort: { key: "created", dir: "desc" },
-  });
-  const shown = view.filter((j) => FILTERS.find((c) => c[0] === filter)![2](st(j)));
+  const status = FILTERS.find((f) => f[0] === filter)![2];
+  const { data, loading, refreshing, error, refresh } = useCached<{ list: any[]; total: number; skipped: number; failed: string[] }>(
+    `jobs:${scope}:${filter}:${space}:${q}:${page}`, async () => {
+      const d = await api.jobs({ scope, status, q, space, page, size: PAGE_SIZE });
+      return { list: d.data?.jobList || [], total: Number(d.data?.listCount) || 0, skipped: Number(d.data?.skippedProjects) || 0, failed: d.data?.failedSpaces || [] };
+    }, [scope, filter, space, q, page]);
+
+  // 每个状态的精确数量：各自要一条（size=1），只看平台返回的 listCount
+  const { data: counts } = useCached<Record<string, number>>(`jobs-count:${scope}:${space}:${q}`, async () => {
+    const pairs = await Promise.all(FILTERS.map(async ([k, , st]) => [k, Number((await api.jobs({ scope, status: st, q, space, size: 1 })).data?.listCount) || 0] as const));
+    return Object.fromEntries(pairs);
+  }, [scope, space, q]);
+
+  const shown = data?.list || [];
+  const total = data?.total || 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // 运行中的作业补一条利用率迷你曲线（最多 12 个，渲染后再拉）
   useEffect(() => {
@@ -50,7 +66,7 @@ export function Jobs({ state }: { state: AppState }) {
         setUtil((u) => ({ ...u, [id]: m?.points || [] }));
       }).catch(() => {});
     });
-  }, [all, filter]); // eslint-disable-line
+  }, [data]); // eslint-disable-line
 
   const act = async (action: "job-cancel" | "job-delete", j: any) => {
     const id = String(field(j, ["jobId", "id"], "")), name = field(j, ["jobName", "name"], id);
@@ -83,28 +99,26 @@ export function Jobs({ state }: { state: AppState }) {
   };
 
   const monitorJob = (j: any): MonitorJob => ({ id: String(field(j, ["jobId", "id"], "")), name: field(j, ["jobName", "name"]), space: j.spaceId || "", kind: "job", gpu: gpuOf(j), owner: j.qdOwner });
-  const counts = Object.fromEntries(FILTERS.map(([k, , f]) => [k, view.filter((j) => f(st(j))).length]));
-  const runningGpu = (all || []).filter((j) => st(j) === "RUNNING").reduce((a, j) => a + gpuOf(j), 0);
 
   return (
     <>
-      <PageBar title="作业" hint={all ? `${counts.running} 个运行中，占用 ${runningGpu} 卡` : undefined}
+      <PageBar title="作业" hint={counts ? `${counts.running} 个运行中，${counts.waiting} 个排队` : undefined}
         right={<div className="flex items-center gap-2">
           <button className="btn" onClick={refresh}>{refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>
           <button className="btn btn-pri" onClick={() => { setPreset(null); setCreate(true); }}><Plus size={14} />提交作业</button>
         </div>} />
 
-      <Toolbar search={search} onSearch={setSearch} placeholder="搜索名称、ID、项目、提交者">
+      <Toolbar search={input} onSearch={setInput} placeholder="按作业名搜索">
         <div className="flex items-center gap-0.5" role="tablist" aria-label="按状态筛选">
           {FILTERS.map(([k, label]) => (
             <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilterKey(k)} className={"chip " + (filter === k ? "chip-on" : "")}>
-              {label}<span className="ml-1.5 text-ink-faint tabular-nums">{counts[k]}</span>
+              {label}<span className="ml-1.5 text-ink-faint tabular-nums">{counts ? counts[k] : "…"}</span>
             </button>
           ))}
         </div>
         <div className="flex-1" />
         {spaces.length > 1 && (
-          <select className="field w-32" aria-label="空间" value={filters.space || ""} onChange={(e) => setFilter("space", e.target.value, (j, v) => j.spaceId === v)}>
+          <select className="field w-32" aria-label="空间" value={space} onChange={(e) => setSpace(e.target.value)}>
             <option value="">全部空间</option>{spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
         )}
         <select className="field w-28" aria-label="范围" value={scope} onChange={(e) => setScope(e.target.value)}>
@@ -112,20 +126,20 @@ export function Jobs({ state }: { state: AppState }) {
         </select>
       </Toolbar>
 
-      {error && !all && <div className="card p-4 text-body mb-3">作业列表读取失败：{error}。检查平台连接后点刷新。</div>}
+      {error && !data && <div className="card p-4 text-body mb-3">作业列表读取失败：{error}。检查平台连接后点刷新。</div>}
       {loading ? <Spinner /> : (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] border-collapse">
               <thead>
                 <tr className="text-left text-[12px] text-ink-faint border-b border-line bg-canvas/60">
-                  <SortTh sortKey="name" active={sortKey === "name"} dir={sortDir} onSort={toggleSort}>作业</SortTh>
+                  <Th>作业</Th>
                   <Th>状态</Th>
-                  <SortTh sortKey="gpu" active={sortKey === "gpu"} dir={sortDir} onSort={toggleSort} num>GPU</SortTh>
+                  <Th num>GPU</Th>
                   <Th>近 10 分钟利用率</Th>
                   <Th>项目 / 空间</Th>
                   <Th>提交者</Th>
-                  <SortTh sortKey="created" active={sortKey === "created"} dir={sortDir} onSort={toggleSort}>创建时间</SortTh>
+                  <Th>创建时间 ↓</Th>
                   <Th><span className="sr-only">操作</span></Th>
                 </tr>
               </thead>
@@ -174,7 +188,7 @@ export function Jobs({ state }: { state: AppState }) {
                 })}
                 {!shown.length && (
                   <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-faint">
-                    {(all || []).length ? "没有符合条件的作业，换个状态或清空搜索。" : <>还没有作业。<button className="text-brand hover:underline" onClick={() => setCreate(true)}>提交一个</button></>}
+                    {q || filter !== "all" ? "没有符合条件的作业，换个状态或清空搜索。" : <>还没有作业。<button className="text-brand hover:underline" onClick={() => setCreate(true)}>提交一个</button></>}
                   </td></tr>
                 )}
               </tbody>
@@ -182,7 +196,16 @@ export function Jobs({ state }: { state: AppState }) {
           </div>
         </div>
       )}
-      {all && <p className="text-[11px] text-ink-faint mt-2">显示 {shown.length} / {all.length} 个作业。点作业名查看性能监控、运行日志和终端。</p>}
+      {data && (
+        <div className="flex items-center gap-3 mt-2 text-[12px] text-ink-faint" data-testid="pager">
+          <span>共 {total} 个，第 {(page - 1) * PAGE_SIZE + (shown.length ? 1 : 0)}–{(page - 1) * PAGE_SIZE + shown.length} 个。点作业名查看监控、日志和终端。</span>
+          {(data.skipped > 0 || data.failed.length > 0) && <span className="text-warn">{data.skipped ? `${data.skipped} 个项目读取失败未计入` : ""}{data.failed.length ? `空间 ${data.failed.join("、")} 读取失败` : ""}</span>}
+          <span className="flex-1" />
+          <button className="btn btn-mini" aria-label="上一页" disabled={page <= 1 || refreshing} onClick={() => setPage((n) => n - 1)}><ChevronLeft size={13} /></button>
+          <span className="tabular-nums text-ink-soft">{page} / {pages}</span>
+          <button className="btn btn-mini" aria-label="下一页" disabled={page >= pages || refreshing} onClick={() => setPage((n) => n + 1)}><ChevronRight size={13} /></button>
+        </div>
+      )}
 
       <Monitor job={mon?.job || null} initialTab={mon?.tab} onClose={() => setMon(null)} />
       {create && <CreateForm kind="job" state={state} open initial={preset} onClose={() => { setCreate(false); setPreset(null); }} onDone={refresh} />}

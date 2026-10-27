@@ -27,12 +27,21 @@ export function Overview({ state }: { state: AppState }) {
   const [showCpu, setShowCpu] = useState(false);
 
   const { data, loading, refreshing, error, refresh } = useCached("overview", async () => {
-    const [idle, jobs, devs] = await Promise.all([
+    // 概览只要计数和最近几条：用原生分页按状态各取一页，listCount 就是精确总数
+    const [idle, running, waiting, recent, devs] = await Promise.all([
       api.idle(),
-      api.jobs("mine", 200),
+      api.jobs({ status: "RUNNING", size: 6 }),
+      api.jobs({ status: "CREATED,WAITING", size: 6 }),
+      api.jobs({ size: 6 }),
       api.devs("mine").catch(() => ({ data: { devList: [] } })),
     ]);
-    return { groups: idle.groups || [], jobs: jobs.data?.jobList || [], devs: devs.data?.devList || [] };
+    const list = (r: any) => (r.data?.jobList || []) as any[];
+    const count = (r: any) => Number(r.data?.listCount) || 0;
+    return {
+      groups: idle.groups || [], devs: devs.data?.devList || [],
+      running: list(running), runningCount: count(running), waitingCount: count(waiting),
+      recent: [...list(running), ...list(waiting), ...list(recent)], totalCount: count(recent),
+    };
   });
 
   const { data: nodes } = useCached<HeatNode[]>("overview-nodes", async () => {
@@ -60,10 +69,9 @@ export function Overview({ state }: { state: AppState }) {
   const total = gpuGroups.reduce((a: number, g: any) => a + (Number(g.capacity?.gpuCount) || 0), 0);
   const models = [...new Set(gpuGroups.flatMap((g: any) => asList(g.capacity?.gpuTypes)))];
 
-  const jobs = data!.jobs as any[];
-  const running = jobs.filter((j) => statusOf(j) === "RUNNING");
-  const waiting = jobs.filter((j) => /WAIT|QUEU|PEND|CREAT|INIT/.test(statusOf(j)));
-  const recent = [...running, ...waiting, ...jobs.filter((j) => !running.includes(j) && !waiting.includes(j))].slice(0, 6);
+  const seen = new Set<string>();
+  const recent = (data!.recent as any[]).filter((j) => { const id = String(field(j, ["jobId", "id"], "")); if (seen.has(id)) return false; seen.add(id); return true; }).slice(0, 6);
+  const runningCount = data!.runningCount as number, waitingCount = data!.waitingCount as number, totalCount = data!.totalCount as number;
   const devs = data!.devs as any[];
   const devRunning = devs.filter((d) => String(field(d, ["jobenvStatus"], "")).toUpperCase() === "RUNNING").length;
 
@@ -86,8 +94,8 @@ export function Overview({ state }: { state: AppState }) {
         <Stat label="空闲 GPU" sub={models.join("、") || "没有 GPU 资源组"}>
           {free}<span className="text-body font-normal text-ink-faint"> / {total} 卡</span>
         </Stat>
-        <Stat label="我的作业" sub={`排队 ${waiting.length}，共 ${jobs.length} 个`}>
-          <a href="#jobs" className="hover:text-brand">{running.length}<span className="text-body font-normal text-ink-faint"> 运行中</span></a>
+        <Stat label="我的作业" sub={`排队 ${waitingCount}，共 ${totalCount} 个`}>
+          <a href="#jobs" className="hover:text-brand">{runningCount}<span className="text-body font-normal text-ink-faint"> 运行中</span></a>
         </Stat>
         <Stat label="开发机" sub={`共 ${devs.length} 台`}>
           <a href="#devs" className="hover:text-brand">{devRunning}<span className="text-body font-normal text-ink-faint"> 运行中</span></a>
@@ -136,7 +144,7 @@ export function Overview({ state }: { state: AppState }) {
         </div>
 
         <div className="space-y-4">
-          <Panel title="我的作业" meta={`${running.length} 个运行中`} action={<a href="#jobs" className="text-aux text-brand hover:underline">全部作业</a>}>
+          <Panel title="我的作业" meta={`${runningCount} 个运行中`} action={<a href="#jobs" className="text-aux text-brand hover:underline">全部作业</a>}>
             {recent.length ? recent.map((j: any, i: number) => {
               const id = String(field(j, ["jobId", "id"], ""));
               return (

@@ -96,7 +96,7 @@ pub(crate) fn print_dev_list(response: &Value) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn print_resource_group_list(response: &Value) -> Result<()> {
+pub(crate) fn print_group_list(response: &Value) -> Result<()> {
     let groups = response_array(response, &["/data/rsgroupList", "/data/list"]);
     let rows = groups
         .iter()
@@ -176,7 +176,7 @@ pub(crate) fn print_image_list(response: &Value) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn print_image_repository_list(response: &Value) -> Result<()> {
+pub(crate) fn print_repo_list(response: &Value) -> Result<()> {
     let repositories = response_array(
         response,
         &[

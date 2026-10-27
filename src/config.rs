@@ -169,7 +169,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_is_bounded_and_normalized() {
+    fn default_config_valid() {
         let mut config = Config::default();
         config.base_url.push('/');
         config.normalize().unwrap();

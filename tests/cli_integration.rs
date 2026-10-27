@@ -6,7 +6,7 @@ use std::fs;
 use std::sync::atomic::Ordering;
 
 #[test]
-fn login_refresh_read_and_bounded_bulk_flow() {
+fn login_bulk_flow() {
     let server = MockServer::start(0);
     let temp = isolated_environment(&server.base_url, 16);
     let test_password = "integration-only-password";
@@ -143,7 +143,7 @@ fn login_refresh_read_and_bounded_bulk_flow() {
 }
 
 #[test]
-fn dpapi_credentials_relogin_after_refresh_expiry() {
+fn relogin_after_expiry() {
     let server = MockServer::start(0);
     server.observed.fail_refresh.store(true, Ordering::Relaxed);
     let temp = isolated_environment(&server.base_url, 4);

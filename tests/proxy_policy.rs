@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::{fs, io::Write, process::Stdio};
 use tempfile::TempDir;
 
-fn login_with_environment_proxy(temp: &TempDir, extra: &[&str]) -> Value {
+fn login_env_proxy(temp: &TempDir, extra: &[&str]) -> Value {
     let mut command = qd_command(temp);
     // An unreachable proxy and no exclusions make accidental inheritance fail.
     for key in [
@@ -48,14 +48,14 @@ fn configured_proxy(temp: &TempDir) -> Value {
 }
 
 #[test]
-fn default_ignores_environment_proxies() {
+fn ignores_env_proxies() {
     let server = MockServer::start(0);
     let temp = isolated_environment(&server.base_url, 1);
-    assert_eq!(login_with_environment_proxy(&temp, &[])["ok"], true);
+    assert_eq!(login_env_proxy(&temp, &[])["ok"], true);
 }
 
 #[test]
-fn configured_proxy_routes_requests_to_explicit_proxy() {
+fn configured_proxy_routes() {
     let proxy = MockServer::start(0);
     let temp = isolated_environment("http://qd-origin.invalid", 1);
     stdout_json(&run_qd(
@@ -63,11 +63,11 @@ fn configured_proxy_routes_requests_to_explicit_proxy() {
         &["config", "set", "proxy", &proxy.base_url],
         None,
     ));
-    assert_eq!(login_with_environment_proxy(&temp, &[])["ok"], true);
+    assert_eq!(login_env_proxy(&temp, &[])["ok"], true);
 }
 
 #[test]
-fn cli_proxy_overrides_config_without_persisting() {
+fn proxy_flag_override() {
     let proxy = MockServer::start(0);
     let temp = isolated_environment("http://qd-origin.invalid", 1);
     stdout_json(&run_qd(
@@ -76,14 +76,14 @@ fn cli_proxy_overrides_config_without_persisting() {
         None,
     ));
     assert_eq!(
-        login_with_environment_proxy(&temp, &["--proxy", &proxy.base_url])["ok"],
+        login_env_proxy(&temp, &["--proxy", &proxy.base_url])["ok"],
         true
     );
     assert_eq!(configured_proxy(&temp), "http://127.0.0.1:9");
 }
 
 #[test]
-fn cli_none_bypasses_configured_proxy_and_clear_persists() {
+fn proxy_none_bypass() {
     let server = MockServer::start(0);
     let temp = isolated_environment(&server.base_url, 1);
     stdout_json(&run_qd(
@@ -92,16 +92,16 @@ fn cli_none_bypasses_configured_proxy_and_clear_persists() {
         None,
     ));
     assert_eq!(
-        login_with_environment_proxy(&temp, &["--proxy", "none"])["ok"],
+        login_env_proxy(&temp, &["--proxy", "none"])["ok"],
         true
     );
     stdout_json(&run_qd(&temp, &["config", "set", "proxy", "none"], None));
     assert!(configured_proxy(&temp).is_null());
-    assert_eq!(login_with_environment_proxy(&temp, &[])["ok"], true);
+    assert_eq!(login_env_proxy(&temp, &[])["ok"], true);
 }
 
 #[test]
-fn config_show_hides_proxy_credentials() {
+fn hides_proxy_credentials() {
     let temp = isolated_environment("http://qd-origin.invalid", 1);
     stdout_json(&run_qd(
         &temp,

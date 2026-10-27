@@ -80,7 +80,7 @@ pub(crate) async fn dev_terminal_url(api: &ApiClient, id: &str) -> Result<String
         .map(str::to_owned)
 }
 
-pub(crate) async fn list_scoped_dev_environments(api: &ApiClient, scope: &str) -> Result<Value> {
+pub(crate) async fn list_scoped_devs(api: &ApiClient, scope: &str) -> Result<Value> {
     let projects = scoped_projects(api, scope).await?;
     let dev_list = projects
         .into_iter()

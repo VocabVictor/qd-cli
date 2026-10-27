@@ -17,7 +17,7 @@ pub(crate) async fn job_command(
                 validate_id(&project_id, "PROJECT_ID")?;
                 let mut query = query;
                 if let Some(status) = status {
-                    insert_value(&mut query, "status", Value::String(status))?;
+                    insert_value(&mut query, "jobStatus", Value::String(status.to_ascii_uppercase()))?;
                 }
                 let path = format!("/project/job/list/{project_id}");
                 api.get(Service::Core, &path, query).await?
@@ -137,7 +137,7 @@ pub(crate) async fn job_command(
             let mut command: Vec<String> = args
                 .drain()
                 .into_iter()
-                .map(|arg| un_mangle_remote_path(&arg))
+                .map(|arg| unmangle_path(&arg))
                 .collect();
             if command.first().map(String::as_str) == Some("--") {
                 command.remove(0);

@@ -167,7 +167,7 @@ mod linux_tests {
     use super::*;
 
     #[test]
-    fn linux_protect_round_trip() {
+    fn protect_round_trip() {
         let plain = b"unit-test-session-material";
         let encrypted = protect(plain).unwrap();
         assert_ne!(&encrypted[..], &plain[..]);
@@ -176,7 +176,7 @@ mod linux_tests {
     }
 
     #[test]
-    fn linux_unprotect_rejects_garbage() {
+    fn rejects_garbage() {
         assert!(unprotect(b"not-a-session").is_err());
     }
 }

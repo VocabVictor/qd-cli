@@ -42,10 +42,10 @@ fn job_row(job: &Value) -> Vec<String> {
     } else {
         format!("{gpu} [{indexes}]")
     };
-    job_row_with_gpu(job, gpu)
+    gpu_job_row(job, gpu)
 }
 
-fn job_row_with_gpu(job: &Value, gpu: String) -> Vec<String> {
+fn gpu_job_row(job: &Value, gpu: String) -> Vec<String> {
     let kind = match numeric_field(job, &["jobType"]).unwrap_or(0.0) as u64 {
         1 => "离线任务".to_owned(),
         2 => "开发环境".to_owned(),

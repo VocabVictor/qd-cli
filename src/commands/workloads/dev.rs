@@ -10,7 +10,7 @@ pub(crate) async fn dev_command(
         Some("list") => {
             let scope = project_scope(args)?;
             args.ensure_empty()?;
-            let response = list_scoped_dev_environments(api, &scope).await?;
+            let response = list_scoped_devs(api, &scope).await?;
             if compact {
                 print_json(&response, true)
             } else {
@@ -254,7 +254,7 @@ pub(crate) async fn dev_command(
             let mut command: Vec<String> = args
                 .drain()
                 .into_iter()
-                .map(|arg| un_mangle_remote_path(&arg))
+                .map(|arg| unmangle_path(&arg))
                 .collect();
             if command.first().map(String::as_str) == Some("--") {
                 command.remove(0);

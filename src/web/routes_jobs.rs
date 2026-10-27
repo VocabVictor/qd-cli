@@ -19,73 +19,79 @@ fn space_of(query: &HashMap<String, String>) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-/// 作业列表：跨全部空间聚合（指定 project 时只查其所在空间）。
+/// 作业列表：跨空间、跨项目汇总，按创建时间倒序，走平台原生分页。
+/// 参数：page/size 分页，status 逗号分隔的平台状态，q 作业名关键字（平台 keyWords），
+/// space 只看某个空间，project 只看某个项目。
 pub(crate) async fn list_jobs(
     State(state): State<Arc<WebState>>,
     Query(query): Query<HashMap<String, String>>,
 ) -> WebResult {
     let scope = query_scope(&query)?;
-    let page = query_u64(&query, "page", 1, 1, u64::MAX)? as usize;
-    let size = query_u64(&query, "size", 100, 1, 1000)? as usize;
-    let status = query.get("status").filter(|value| !value.is_empty());
-
-    if let Some(project_id) = query.get("project").filter(|value| !value.is_empty()) {
-        validate_id(project_id, "PROJECT_ID")?;
-        let api = state.api_for(space_of(&query)).await?;
-        let mut request = json!({"pageNum": page, "pageSize": size});
-        if let Some(status) = status {
-            insert_value(&mut request, "status", Value::String(status.clone()))?;
-        }
-        let path = format!("/project/job/list/{project_id}");
-        return reply(api.get(Service::Core, &path, request).await?);
+    let page = query_u64(&query, "page", 1, 1, 100_000)?;
+    let size = query_u64(&query, "size", 50, 1, 500)?;
+    let statuses = parse_statuses(query.get("status").map(String::as_str)).map_err(|err| WebError::bad_request(format!("{err:#}")))?;
+    let keyword = query.get("q").map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+    if keyword.as_ref().is_some_and(|k| k.chars().count() > 64) {
+        return Err(WebError::bad_request("关键字最多 64 个字"));
+    }
+    let only_space = space_of(&query);
+    let only_project = query.get("project").filter(|v| !v.is_empty());
+    if let Some(id) = only_project {
+        validate_id(id, "PROJECT_ID")?;
     }
 
-    let config = state.config().await;
-    let pagination = json!({"pageNum": 1, "pageSize": 1000});
-    let mut jobs = Vec::new();
-    let mut skipped = 0u64;
+    // 同一个项目可能在多个空间的列表里都出现：每个（项目, 状态）只保留一份，
+    // 并优先用项目所属空间的客户端去查（平台按 spaceid 请求头路由）。
+    let mut picked: HashMap<(String, Option<String>), JobSource> = HashMap::new();
     let mut failed_spaces = Vec::new();
     for space in state.spaces().await {
+        if only_space.is_some_and(|id| id != space.id) {
+            continue;
+        }
         let api = state.api_for(Some(&space.id)).await?;
-        match list_scoped_jobs(&api, &config, &scope, &pagination, status.map(String::as_str))
-            .await
-        {
-            Ok(response) => {
-                skipped += response
-                    .pointer("/data/skippedProjects")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0);
-                for mut job in response_array(&response, &["/data/jobList"]).to_vec() {
-                    attach_space(&mut job, &space);
-                    jobs.push(job);
+        let mut tag = serde_json::Map::new();
+        tag.insert("spaceId".to_owned(), Value::String(space.id.clone()));
+        tag.insert("spaceName".to_owned(), Value::String(space.name.clone()));
+        match job_sources(&api, &scope, &statuses, keyword.as_deref(), tag).await {
+            Ok(list) => {
+                for source in list {
+                    if only_project.is_some_and(|id| *id != source.project_id) {
+                        continue;
+                    }
+                    let home = source.tag.get("spaceId").and_then(Value::as_str) == source.api.space_id();
+                    let key = (source.project_id.clone(), source.status.clone());
+                    let keep = picked.get(&key).is_some_and(|old| {
+                        old.tag.get("spaceId").and_then(Value::as_str) == old.api.space_id() || !home
+                    });
+                    if !keep {
+                        picked.insert(key, source);
+                    }
                 }
             }
             Err(_) => failed_spaces.push(space.name.clone()),
         }
     }
+    let config = state.config().await;
+    let mut result = merged_job_page(picked.into_values().collect(), page, size, config.concurrency).await;
+
     // 标注提交者，前端据此决定"我的作业"能不能取消/删除/进终端。
     let owners: HashMap<String, String> = ownership::owners()?.into_iter().collect();
-    for job in &mut jobs {
+    for job in &mut result.jobs {
         let id = job.get("jobId").or_else(|| job.get("id")).and_then(value_string);
         if let (Some(id), Some(object)) = (id, job.as_object_mut()) {
             let owner = owners.get(&id).cloned().map(Value::String).unwrap_or(Value::Null);
             object.insert("qdOwner".to_owned(), owner);
         }
     }
-    jobs.sort_by(|left, right| {
-        value_u64(right.get("createTime").unwrap_or(&Value::Null))
-            .cmp(&value_u64(left.get("createTime").unwrap_or(&Value::Null)))
-    });
-    let total = jobs.len();
-    let start = page.saturating_sub(1).saturating_mul(size).min(total);
-    let job_list = jobs.into_iter().skip(start).take(size).collect::<Vec<_>>();
     reply(json!({
         "code": 0,
         "data": {
-            "listCount": total,
-            "jobList": job_list,
+            "listCount": result.total,
+            "jobList": result.jobs,
+            "page": page,
+            "size": size,
             "scope": scope,
-            "skippedProjects": skipped,
+            "skippedProjects": result.skipped,
             "failedSpaces": failed_spaces,
         }
     }))

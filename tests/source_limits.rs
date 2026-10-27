@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 const MAX_RUST_LINES: usize = 300;
 
 #[test]
-fn every_rust_source_stays_within_line_limit() {
+fn source_line_limit() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut pending = vec![root.join("src"), root.join("tests")];
     let mut violations = Vec::new();

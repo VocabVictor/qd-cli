@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn print_node_resource_detail(node: &Value) -> Result<()> {
+pub(crate) fn print_node_detail(node: &Value) -> Result<()> {
     let rows = vec![
         vec!["节点".to_owned(), field_text(node, &["name"])],
         vec!["IP".to_owned(), field_text(node, &["ip", "accessIp"])],

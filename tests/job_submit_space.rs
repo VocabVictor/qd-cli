@@ -5,7 +5,7 @@ use serde_json::json;
 use std::{fs, sync::atomic::Ordering};
 
 #[test]
-fn job_submit_rejects_space_mismatch_before_http_and_accepts_explicit_override() {
+fn submit_space_mismatch() {
     let server = MockServer::start(0);
     let temp = isolated_environment(&server.base_url, 1);
     let job_file = temp.path().join("job.json");

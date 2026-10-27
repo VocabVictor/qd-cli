@@ -14,10 +14,10 @@ use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-const SESSION_MAX_AGE_SECS: u64 = 7 * 24 * 60 * 60;
+const SESSION_AGE: u64 = 7 * 24 * 60 * 60;
 
 fn set_cookie_header(token: &str) -> String {
-    format!("{SESSION_COOKIE}={token}; HttpOnly; Path=/; Max-Age={SESSION_MAX_AGE_SECS}; SameSite=Lax")
+    format!("{SESSION_COOKIE}={token}; HttpOnly; Path=/; Max-Age={SESSION_AGE}; SameSite=Lax")
 }
 
 fn clear_cookie_header() -> String {

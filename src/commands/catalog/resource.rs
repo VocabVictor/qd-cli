@@ -16,7 +16,7 @@ pub(crate) async fn resource_command(
             if compact {
                 print_json(&response, true)
             } else {
-                print_resource_group_list(&response)
+                print_group_list(&response)
             }
         }
         Some("group") => {

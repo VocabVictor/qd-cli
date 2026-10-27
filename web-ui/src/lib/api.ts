@@ -57,7 +57,14 @@ export const api = {
     qpost("/api/login", { username, password, ldap, remember }),
   logout: () => qpost("/api/logout"),
   idle: () => qget("/api/idle"),
-  jobs: (scope: string, size = 500) => qget(`/api/jobs?scope=${scope}&size=${size}`),
+  /** 作业列表走平台原生分页：status 为逗号分隔的平台状态，q 为作业名关键字。 */
+  jobs: (o: { scope?: string; page?: number; size?: number; status?: string; q?: string; space?: string } = {}) => {
+    const p = new URLSearchParams({ scope: o.scope || "mine", page: String(o.page || 1), size: String(o.size || 50) });
+    if (o.status) p.set("status", o.status);
+    if (o.q) p.set("q", o.q);
+    if (o.space) p.set("space", o.space);
+    return qget(`/api/jobs?${p}`);
+  },
   job: (id: string, sp: string) => qget(`/api/job/${id}${sp ? "?spaceId=" + sp : ""}`),
   jobLogs: (id: string, limit: number, sp: string) => qget(`/api/job/${id}/logs?limit=${limit}${sp ? "&spaceId=" + sp : ""}`),
   jobMetrics: (id: string, minutes: number, sp: string) => qget(`/api/job/${id}/metrics?minutes=${minutes}${sp ? "&spaceId=" + sp : ""}`),

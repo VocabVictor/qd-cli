@@ -98,7 +98,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn credential_payload_is_dpapi_protected() {
+    fn payload_is_protected() {
         let credential = SavedCredentials::new("unit-user".into(), "unit-password".into(), false);
         let mut plain = serde_json::to_vec(&credential).unwrap();
         let encrypted = protect(&plain).unwrap();

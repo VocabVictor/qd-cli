@@ -5,7 +5,7 @@ use crate::*;
 /// 改写形态已按 MSYS 挂载表逆变换还原（见 cli::msys），这里只拦截剩余的
 /// 无法识别形态。
 fn check_remote_path(path: &str) -> Result<String> {
-    let path = un_mangle_remote_path(path);
+    let path = unmangle_path(path);
     if !path.starts_with('/') {
         bail!(
             "远端路径必须是绝对路径（以 / 开头），收到: {path}\n\
@@ -31,12 +31,12 @@ async fn resolve_target(api: &ApiClient, config: &Config, args: &mut Args) -> Re
         let instance = option_u64(args, "--instance", 0, 0, 64)? as usize;
         return Ok(Target::Job(id, instance));
     }
-    let devs = list_scoped_dev_environments(api, "mine").await?;
+    let devs = list_scoped_devs(api, "mine").await?;
     if let Some(id) = first_running_id(&devs, "/data/devList", &["jobenvId"]) {
         return Ok(Target::Dev(id));
     }
     if let Ok(jobs) =
-        list_scoped_jobs(api, config, "mine", &json!({"pageNum": 1, "pageSize": 50}), None).await
+        list_scoped_jobs(api, config, "mine", &json!({"pageNum": 1, "pageSize": 1}), Some("RUNNING")).await
         && let Some(id) = first_running_id(&jobs, "/data/jobList", &["id", "jobId"])
     {
         return Ok(Target::Job(id, 0));

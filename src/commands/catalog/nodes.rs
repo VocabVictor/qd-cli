@@ -14,7 +14,7 @@ pub(crate) async fn resource_nodes_command(
     if compact {
         print_json(&response, true)
     } else {
-        print_node_resource_list(&response, include_jobs)
+        print_node_list(&response, include_jobs)
     }
 }
 
@@ -49,7 +49,7 @@ pub(crate) async fn resource_node_command(
     if compact {
         print_json(&node, true)
     } else {
-        print_node_resource_detail(&node)
+        print_node_detail(&node)
     }
 }
 

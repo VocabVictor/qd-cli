@@ -107,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn job_gpu_multiplies_instances_and_sums_roles() {
+    fn job_gpu_sum() {
         let body = json!({"taskroles": [
             {"gpu": 2, "instance": 3},
             {"gpu": "1"},
@@ -118,14 +118,14 @@ mod tests {
     }
 
     #[test]
-    fn default_quota_blocks_any_gpu_but_allows_cpu() {
+    fn zero_quota_blocks() {
         let usage = Usage::default();
         assert!(check(&Quota::default(), &usage, "s1", "g1", 1).is_err());
         assert!(check(&Quota::default(), &usage, "s1", "g1", 0).is_ok());
     }
 
     #[test]
-    fn every_dimension_is_enforced_at_the_boundary() {
+    fn enforces_every_dimension() {
         let usage = usage_of(&[record("s1", "g1", 2)]);
         assert!(check(&quota(4, 4, 4), &usage, "s1", "g1", 2).is_ok());
         let total = check(&quota(3, 4, 4), &usage, "s1", "g1", 2).unwrap_err();
@@ -137,14 +137,14 @@ mod tests {
     }
 
     #[test]
-    fn unlisted_space_or_group_means_zero() {
+    fn unlisted_means_zero() {
         let usage = Usage::default();
         assert!(check(&quota(8, 8, 8), &usage, "other", "g1", 1).is_err());
         assert!(check(&quota(8, 8, 8), &usage, "s1", "other", 1).is_err());
     }
 
     #[test]
-    fn usage_ignores_cpu_jobs_and_groups_by_dimension() {
+    fn usage_by_dimension() {
         let usage = usage_of(&[record("s1", "g1", 2), record("s1", "g2", 1), record("s2", "g1", 0)]);
         assert_eq!(usage.total, 3);
         assert_eq!(usage.spaces.get("s1"), Some(&3));
@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_statuses_release_quota() {
+    fn terminal_releases_quota() {
         assert!(is_terminal_status("succeeded"));
         assert!(is_terminal_status("STOPPED"));
         assert!(!is_terminal_status("RUNNING"));

@@ -13,12 +13,12 @@ use std::sync::OnceLock;
 /// 原生 exe 时必然把 usr/bin（Windows 形式）放进 PATH，据此反推安装根。
 pub(crate) fn msys_install_root() -> Option<String> {
     let path = std::env::var_os("PATH")?;
-    msys_root_from_entries(
+    msys_root(
         std::env::split_paths(&path).map(|entry| entry.to_string_lossy().into_owned()),
     )
 }
 
-pub(crate) fn msys_root_from_entries<I: IntoIterator<Item = String>>(
+pub(crate) fn msys_root<I: IntoIterator<Item = String>>(
     entries: I,
 ) -> Option<String> {
     entries.into_iter().find_map(|entry| {
@@ -105,7 +105,7 @@ pub(crate) fn restore_msys_rewrite(raw: &str, table: &[(String, String)]) -> Str
 
 /// 还原“远端语义”参数。挂载表每个进程只解析一次；探测不到 MSYS 或解析不出
 /// 挂载表时表为空，所有参数原样返回（交由调用方校验或服务端报错）。
-pub(crate) fn un_mangle_remote_path(raw: &str) -> String {
+pub(crate) fn unmangle_path(raw: &str) -> String {
     static TABLE: OnceLock<Vec<(String, String)>> = OnceLock::new();
     let mut path = raw;
     while path.starts_with("//") {
@@ -147,18 +147,18 @@ mod tests {
     }
 
     #[test]
-    fn install_root_is_derived_from_usr_bin_path_entries() {
+    fn root_from_path() {
         assert_eq!(
-            msys_root_from_entries(["C:\\x".to_owned(), "E:\\Git\\usr\\bin".to_owned()]),
+            msys_root(["C:\\x".to_owned(), "E:\\Git\\usr\\bin".to_owned()]),
             Some("E:\\Git".to_owned())
         );
         // usr/bin 在开头（Linux 原生 PATH）或缺失时探测不到
-        assert_eq!(msys_root_from_entries(["/usr/bin".to_owned()]), None);
-        assert_eq!(msys_root_from_entries(["C:\\Windows\\system32".to_owned()]), None);
+        assert_eq!(msys_root(["/usr/bin".to_owned()]), None);
+        assert_eq!(msys_root(["C:\\Windows\\system32".to_owned()]), None);
     }
 
     #[test]
-    fn mount_table_follows_fstab_and_expands_usertemp() {
+    fn mount_table_fstab() {
         let table = table();
         assert!(table.contains(&("/tmp".to_owned(), "C:/Users/lenovo/AppData/Local/Temp".to_owned())));
         assert!(table.contains(&("/mnt/share".to_owned(), "C:/share".to_owned())));
@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn rewrites_are_restored_by_longest_prefix() {
+    fn longest_prefix_restore() {
         let table = table();
         assert_eq!(restore_msys_rewrite("E:/Git/job/detail/1", &table), "/job/detail/1");
         assert_eq!(restore_msys_rewrite("e:/git/job/detail/1", &table), "/job/detail/1");
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_table_leaves_everything_unchanged() {
+    fn empty_table_noop() {
         assert_eq!(restore_msys_rewrite("E:/Git/job/list", &[]), "E:/Git/job/list");
     }
 }

@@ -27,7 +27,7 @@ pub(crate) async fn list_devs(
     let mut failed_spaces = Vec::new();
     for space in state.spaces().await {
         let api = state.api_for(Some(&space.id)).await?;
-        match list_scoped_dev_environments(&api, &scope).await {
+        match list_scoped_devs(&api, &scope).await {
             Ok(response) => {
                 for mut dev in response_array(&response, &["/data/devList"]).to_vec() {
                     attach_space(&mut dev, &space);
@@ -189,7 +189,7 @@ pub(crate) async fn post_exec(
     let mut websocket = connect_web_terminal(&api, &url).await?;
     let outcome = tokio::time::timeout(
         Duration::from_secs(timeout_secs),
-        run_web_terminal_command(&mut websocket, &command),
+        run_terminal_command(&mut websocket, &command),
     )
     .await
     .map_err(|_| {

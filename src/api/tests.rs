@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn resolves_all_service_prefixes() {
+fn service_prefixes() {
     assert_eq!(
         resolve_api_path(Service::Core, "/job/new").unwrap(),
         "/gemini/v1/gemini_api/gemini_api/user/job/new"
@@ -26,7 +26,7 @@ fn resolves_all_service_prefixes() {
 }
 
 #[test]
-fn rejects_business_errors_without_exposing_data() {
+fn hides_business_errors() {
     let error = ensure_api_success(&json!({
         "code": 40123,
         "msg": "denied",
@@ -40,7 +40,7 @@ fn rejects_business_errors_without_exposing_data() {
 }
 
 #[test]
-fn sanitizes_non_json_http_errors() {
+fn sanitizes_http_errors() {
     assert_eq!(
         safe_error_message("<html>secret</html>"),
         "非 JSON 错误响应（内容已隐藏）"

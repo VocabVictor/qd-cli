@@ -63,7 +63,7 @@ pub(crate) use util::*;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    configure_windows_console_utf8();
+    console_utf8();
     if let Err(error) = run().await {
         eprintln!("错误: {error:#}");
         std::process::exit(1);
@@ -71,7 +71,7 @@ async fn main() {
 }
 
 #[cfg(windows)]
-fn configure_windows_console_utf8() {
+fn console_utf8() {
     use windows_sys::Win32::System::Console::{SetConsoleCP, SetConsoleOutputCP};
 
     const CP_UTF8: u32 = 65001;
@@ -85,7 +85,7 @@ fn configure_windows_console_utf8() {
 }
 
 #[cfg(not(windows))]
-fn configure_windows_console_utf8() {}
+fn console_utf8() {}
 
 #[cfg(test)]
 mod tests;

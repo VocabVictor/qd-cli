@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn argument_parser_supports_equals_and_separate_values() {
+fn parses_equals_syntax() {
     let mut args = Args::new(
         ["job", "--page=2", "--size", "50", "--compact"]
             .into_iter()
@@ -15,7 +15,7 @@ fn argument_parser_supports_equals_and_separate_values() {
 }
 
 #[test]
-fn terminal_status_detection_is_strict() {
+fn strict_terminal_status() {
     assert!(result_is_terminal(&json!({
         "ok": true,
         "response": {"data": {"status": "SUCCEEDED"}}
@@ -36,14 +36,14 @@ fn percentile_handles_edges() {
 }
 
 #[test]
-fn ids_reject_path_injection() {
+fn rejects_path_injection() {
     assert!(validate_id("1234567890", "JOB_ID").is_ok());
     assert!(validate_id("../admin", "JOB_ID").is_err());
     assert!(validate_id("1?x=2", "JOB_ID").is_err());
 }
 
 #[test]
-fn sensitive_fields_are_redacted_recursively() {
+fn redacts_sensitive_fields() {
     let mut value = json!({
         "data": {
             "token": "access-token",
@@ -65,7 +65,7 @@ fn sensitive_fields_are_redacted_recursively() {
 }
 
 #[test]
-fn web_terminal_protocol_extracts_stdout_only() {
+fn terminal_stdout_only() {
     let stdout = terminal_output(Message::Text(
         json!({"operation": "stdout", "data": "hello\r\n"})
             .to_string()
@@ -81,7 +81,7 @@ fn web_terminal_protocol_extracts_stdout_only() {
 }
 
 #[test]
-fn web_terminal_quotes_commands_and_strips_control_sequences() {
+fn terminal_quotes_commands() {
     assert_eq!(shell_quote("echo"), "echo");
     assert_eq!(shell_quote("hello world"), "'hello world'");
     assert_eq!(shell_quote("a'b"), "'a'\"'\"'b'");
@@ -92,7 +92,7 @@ fn web_terminal_quotes_commands_and_strips_control_sequences() {
 }
 
 #[test]
-fn graphics_card_list_supports_platform_separators() {
+fn card_list_separators() {
     assert_eq!(
         parse_graphics_cards("NVIDIA H800 80GB, NVIDIA A100|NVIDIA L40、NVIDIA T4"),
         vec!["NVIDIA H800 80GB", "NVIDIA A100", "NVIDIA L40", "NVIDIA T4"]
@@ -101,28 +101,28 @@ fn graphics_card_list_supports_platform_separators() {
 }
 
 #[test]
-fn table_width_handles_chinese_and_emoji() {
+fn wide_char_width() {
     assert_eq!(display_width("资源组"), 6);
     assert_eq!(display_width("GPU 可用"), 8);
     assert_eq!(display_width("✅"), 2);
 }
 
 #[test]
-fn table_cells_are_truncated_by_display_width() {
+fn truncates_table_cells() {
     let value = truncate_display("NVIDIA H800 80GB（空闲）", 14);
     assert!(display_width(&value) <= 14);
     assert!(value.ends_with('…'));
 }
 
 #[test]
-fn storage_units_are_human_readable() {
+fn readable_storage_units() {
     assert_eq!(format_memory_mib(8192.0), "8.00 GiB");
     assert_eq!(format_memory_mib(1_718_763.0), "1.64 TiB");
     assert_eq!(format_bytes(1024.0 * 1024.0 * 3.0), "3.00 MiB");
 }
 
 #[test]
-fn dev_summary_keeps_status_and_drops_large_nested_payloads() {
+fn dev_summary_compact() {
     let response = json!({
         "code": 0,
         "data": {
@@ -154,7 +154,7 @@ fn dev_summary_keeps_status_and_drops_large_nested_payloads() {
 }
 
 #[test]
-fn owned_scope_is_the_default() {
+fn default_owned_scope() {
     let mut args = Args::new(std::iter::empty());
     assert_eq!(project_scope(&mut args).unwrap(), "mine");
 
@@ -168,7 +168,7 @@ fn owned_scope_is_the_default() {
 }
 
 #[test]
-fn node_resource_filters_match_the_web_queue_api() {
+fn node_filters_match() {
     let mut args = Args::new(
         [
             "--group",
@@ -209,13 +209,13 @@ fn node_resource_filters_match_the_web_queue_api() {
 }
 
 #[test]
-fn node_resource_filters_reject_conflicting_sort_direction() {
+fn node_sort_conflict() {
     let mut args = Args::new(["--asc", "--desc"].into_iter().map(str::to_owned));
     assert!(node_resource_query(&mut args).is_err());
 }
 
 #[test]
-fn options_can_appear_anywhere() {
+fn options_anywhere() {
     let mut args = Args::new(
         ["fs", "--dev=1194", "ls", "/tmp", "--depth", "1", "--long"]
             .into_iter()
@@ -231,7 +231,7 @@ fn options_can_appear_anywhere() {
 }
 
 #[test]
-fn double_dash_preserves_remote_command_arguments() {
+fn double_dash_args() {
     let mut args = Args::new(
         ["job", "exec", "7611", "--instance", "2", "--", "bash", "-lc", "ls /gfs", "--full"]
             .into_iter()
@@ -248,7 +248,7 @@ fn double_dash_preserves_remote_command_arguments() {
 }
 
 #[test]
-fn undeclared_option_tokens_stay_inline() {
+fn undeclared_options_inline() {
     // 远端命令不经 -- 直接携带未知选项时,token 顺序不能被打乱
     let mut args = Args::new(
         ["job", "exec", "7611", "bash", "-lc", "x", "--strange-remote-flag"]

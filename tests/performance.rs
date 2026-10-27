@@ -5,7 +5,7 @@ use std::{process::Stdio, thread, time::Duration};
 
 #[test]
 #[ignore = "explicit performance test"]
-fn concurrent_read_throughput_and_memory() {
+fn concurrent_read_throughput() {
     let server = MockServer::start(20);
     let temp = isolated_environment(&server.base_url, 32);
     let login = run_qd(

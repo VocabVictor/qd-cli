@@ -46,7 +46,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
   const [memory, setMemory] = useState(32);
   const [storage, setStorage] = useState(100);
   const [runScript, setRunScript] = useState("python /gemini/code/main.py");
-  const [maxRunHour, setMaxRunHour] = useState(24);
+  const [maxRunHour, setHours] = useState(24);
   const [advanced, setAdvanced] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -66,7 +66,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
     if (v.projectId) setProjectId(String(v.projectId));
     if (v.rsgroupId) setRsgroupId(String(v.rsgroupId));
     if (v.imageId !== undefined) setImageId(String(v.imageId));
-    if (v.maxRunHour) setMaxRunHour(Number(v.maxRunHour));
+    if (v.maxRunHour) setHours(Number(v.maxRunHour));
     if (!v.taskroles) return;
     if (role.cpu) setCpu(Number(role.cpu));
     if (role.memory) setMemory(Math.max(1, Math.round(Number(role.memory) / 1024)));
@@ -280,7 +280,7 @@ export function CreateForm({ kind, state, open, onClose, onDone, initial, groupL
                   <textarea id="cf-cmd" className="field" rows={3} style={{ resize: "vertical" }} value={runScript} onChange={(e) => setRunScript(e.target.value)} />
                 </Row>
                 <Row label="最长运行" htmlFor="cf-hours" hint="超时后平台会自动停止作业">
-                  <div className="flex items-center gap-2"><input id="cf-hours" className="field w-20 text-right" type="number" min={1} value={maxRunHour} onChange={num(setMaxRunHour, 1)} /><span className="text-[13px] text-ink-soft">小时</span></div>
+                  <div className="flex items-center gap-2"><input id="cf-hours" className="field w-20 text-right" type="number" min={1} value={maxRunHour} onChange={num(setHours, 1)} /><span className="text-[13px] text-ink-soft">小时</span></div>
                 </Row>
               </Section>
             </>

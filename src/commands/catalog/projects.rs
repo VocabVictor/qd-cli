@@ -48,9 +48,22 @@ pub(crate) async fn project_command(
     }
 }
 
+/// 作用域内的全部项目。按平台原生分页逐页取，直到拿满 listCount（全空间约千个项目，
+/// 单页 1000 会漏掉超出的部分）。
 pub(crate) async fn scoped_projects(api: &ApiClient, scope: &str) -> Result<Vec<Value>> {
-    let mut query = json!({"pageNum": 1, "pageSize": 1000});
-    apply_project_scope(&mut query, scope)?;
-    let response = api.get(Service::Core, "/project/list", query).await?;
-    Ok(response_array(&response, &["/data/projectList", "/data/list"]).to_vec())
+    const PAGE: u64 = 500;
+    let mut out = Vec::new();
+    for page in 1..=200u64 {
+        let mut query = json!({"pageNum": page, "pageSize": PAGE});
+        apply_project_scope(&mut query, scope)?;
+        let response = api.get(Service::Core, "/project/list", query).await?;
+        let batch = response_array(&response, &["/data/projectList", "/data/list"]);
+        let total = response.pointer("/data/listCount").and_then(value_u64);
+        let got = batch.len() as u64;
+        out.extend(batch.iter().cloned());
+        if got < PAGE || total.is_some_and(|t| out.len() as u64 >= t) {
+            break;
+        }
+    }
+    Ok(out)
 }

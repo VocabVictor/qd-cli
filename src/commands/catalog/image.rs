@@ -53,7 +53,7 @@ pub(crate) async fn image_command(
             if compact {
                 print_json(&response, true)
             } else {
-                print_image_repository_list(&response)
+                print_repo_list(&response)
             }
         }
         _ => bail!("用法: qd image list|repositories"),

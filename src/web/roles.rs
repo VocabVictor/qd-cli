@@ -64,7 +64,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn admin_only_routes_cover_platform_account_and_config() {
+    fn admin_routes_covered() {
         assert!(admin_only_route(&Method::POST, "/api/logout"));
         assert!(admin_only_route(&Method::POST, "/api/config"));
         assert!(admin_only_route(&Method::GET, "/api/admin/users"));

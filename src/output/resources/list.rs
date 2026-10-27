@@ -1,7 +1,7 @@
 use super::*;
 
-pub(crate) fn print_node_resource_list(response: &Value, include_jobs: bool) -> Result<()> {
-    print_cluster_resource_summary(response);
+pub(crate) fn print_node_list(response: &Value, include_jobs: bool) -> Result<()> {
+    print_cluster_summary(response);
     let nodes = response_array(response, &["/data/nodes"]);
     let rows = nodes.iter().map(node_resource_row).collect::<Vec<_>>();
     let total = response_count(response, &["/data/total"], rows.len());
@@ -32,7 +32,7 @@ pub(crate) fn print_node_resource_list(response: &Value, include_jobs: bool) -> 
     Ok(())
 }
 
-fn print_cluster_resource_summary(response: &Value) {
+fn print_cluster_summary(response: &Value) {
     let data = response.get("data").unwrap_or(response);
     let p_total = numeric_field(data, &["pGpuTotal"]).unwrap_or(0.0);
     let p_used = numeric_field(data, &["pGpuUsed"]).unwrap_or(0.0);
