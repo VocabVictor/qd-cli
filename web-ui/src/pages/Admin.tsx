@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Loader2, Trash2, KeyRound, Save } from "lucide-react";
-import { api, AppState, AdminUser, GpuLimits, getMe, spacesOf } from "../lib/api";
+import { api, AppState, AdminUser, GpuLimits, LoginOverride, LoginPolicy, getMe, spacesOf } from "../lib/api";
+import { EMPTY_OVERRIDE, GlobalRules, LiveSessions, UserOverride } from "../components/LoginRules";
 import { PageBar, Card, Spinner, useToast } from "../components/ui";
 import { Meter } from "../components/viz";
 
@@ -19,7 +20,36 @@ function LimitInput({ value, used, onChange, label }: { value: number; used: num
   );
 }
 
-function UserRow({ user, spaces, groups, onChanged }: { user: AdminUser; spaces: { id: string; name: string }[]; groups: Group[]; onChanged: () => void }) {
+/** 单个成员的登录限制：每一项可以跟随全局，也可以单独设置。 */
+function UserRules({ user, global, onChanged }: { user: AdminUser; global: LoginPolicy | null; onChanged: () => void }) {
+  const toast = useToast();
+  const saved = user.login || EMPTY_OVERRIDE;
+  const [draft, setDraft] = useState<LoginOverride>(saved);
+  const [open, setOpen] = useState(!!user.login);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setDraft(user.login || EMPTY_OVERRIDE); }, [user]);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const save = async (value: LoginOverride | null) => {
+    setBusy(true);
+    try { await api.admin.setUserLogin(user.username, value); toast(`${user.username} 的登录限制已保存`); onChanged(); }
+    catch (e: any) { toast(e.message, true); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-4 pt-4 border-t border-line-soft">
+      <div className="flex items-center gap-3 mb-3">
+        <button className="text-aux font-semibold hover:text-brand" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          登录限制 {open ? "▾" : "▸"}</button>
+        <span className="text-[11px] text-ink-faint">{user.login ? (user.login.exempt ? "已免除限制" : "有单独设置") : "全部跟随全局"}</span>
+        <div className="flex-1" />
+        {user.login && <button className="btn btn-mini" disabled={busy} onClick={() => save(null)}>全部恢复跟随全局</button>}
+        {open && <button className="btn btn-mini btn-pri" disabled={busy || !dirty} onClick={() => save(draft)}><Save size={12} />保存登录限制</button>}
+      </div>
+      {open && <UserOverride value={draft} global={global} effective={dirty ? undefined : user.effective} onChange={setDraft} />}
+    </div>
+  );
+}
+
+function UserRow({ user, spaces, groups, global, onChanged }: { user: AdminUser; spaces: { id: string; name: string }[]; groups: Group[]; global: LoginPolicy | null; onChanged: () => void }) {
   const toast = useToast();
   const [quota, setQuota] = useState<GpuLimits>(user.quota);
   const [busy, setBusy] = useState(false);
@@ -36,6 +66,7 @@ function UserRow({ user, spaces, groups, onChanged }: { user: AdminUser; spaces:
     setQuota((q) => ({ ...q, [dim]: { ...q[dim], [id]: n } }));
 
   return (
+    <div data-user={user.username}>
     <Card className="p-5">
       <div className="flex items-center gap-3 mb-4">
         <span className="grid place-items-center w-9 h-9 rounded-full bg-black/[0.06] font-semibold text-ink-soft uppercase">{user.username.slice(0, 1)}</span>
@@ -82,9 +113,11 @@ function UserRow({ user, spaces, groups, onChanged }: { user: AdminUser; spaces:
             <button className="btn btn-pri" disabled={busy || !dirty} onClick={() => run(() => api.admin.setQuota(user.username, quota), `${user.username} 的配额已保存`)}>
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}保存配额</button>
           </div>
+          <UserRules user={user} global={global} onChanged={onChanged} />
         </>
       )}
     </Card>
+    </div>
   );
 }
 
@@ -93,6 +126,7 @@ export function Admin({ state }: { state: AppState }) {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [rawGroups, setRawGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [global, setGlobal] = useState<LoginPolicy | null>(null);
   const spaces = spacesOf(state);
 
   const load = async () => {
@@ -115,9 +149,13 @@ export function Admin({ state }: { state: AppState }) {
     <>
       <PageBar title="用户与配额" hint="成员用普通邀请码注册，默认 0 卡；管理员用管理员邀请码注册"
         right={<button className="btn" onClick={load}>{loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}刷新</button>} />
+      <div className="space-y-3 mb-6">
+        <GlobalRules onSaved={setGlobal} />
+        <LiveSessions me={getMe().username} />
+      </div>
       {!users ? <Spinner /> : (
         <div className="space-y-3">
-          {users.map((u) => <UserRow key={u.username} user={u} spaces={spaces} groups={groups} onChanged={load} />)}
+          {users.map((u) => <UserRow key={u.username} user={u} spaces={spaces} groups={groups} global={global} onChanged={load} />)}
           {!users.length && <Card className="card-pad text-ink-faint">还没有用户</Card>}
         </div>
       )}

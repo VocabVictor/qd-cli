@@ -26,7 +26,6 @@ export function Overview({ state }: { state: AppState }) {
   const [mon, setMon] = useState<any>(null);
   // 预设对象只在打开时生成一次，避免页面重绘时反复覆盖表单里已改的选项
   const [create, setCreate] = useState<null | { initial?: any; label?: string }>(null);
-  const [showCpu, setShowCpu] = useState(false);
 
   const { data, loading, refreshing, error, refresh } = useCached("overview", async () => {
     // 概览只要计数和最近几条：用原生分页按状态各取一页，listCount 就是精确总数
@@ -112,7 +111,7 @@ export function Overview({ state }: { state: AppState }) {
       <div className="grid xl:grid-cols-[minmax(0,1fr)_360px] gap-4 items-start">
         <div>
           <Table head={<><Th>资源组</Th><Th>空间</Th><Th>GPU 型号</Th><Th num>空闲 / 总量</Th><Th num>单节点最多</Th><Th>使用率</Th><Th>状态</Th></>}>
-            {(showCpu ? [...gpuGroups, ...cpuGroups] : gpuGroups).map((g: any, i: number) => {
+            {[...gpuGroups, ...cpuGroups].map((g: any, i: number) => {
               const idle = g.idle || {}, cap = g.capacity || {};
               const t = Number(cap.gpuCount) || 0, f = Number(idle.gpuWholeCardsFree) || 0, used = Math.max(0, t - f);
               return (
@@ -128,13 +127,8 @@ export function Overview({ state }: { state: AppState }) {
                 </tr>
               );
             })}
-            {!gpuGroups.length && !showCpu && <tr><Td className="text-ink-faint">没有 GPU 资源组</Td></tr>}
+            {!gpuGroups.length && !cpuGroups.length && <tr><Td className="text-ink-faint">没有资源组</Td></tr>}
           </Table>
-          {cpuGroups.length > 0 && (
-            <button className="text-aux text-ink-faint hover:text-ink mt-2" onClick={() => setShowCpu((v) => !v)}>
-              {showCpu ? "隐藏" : "显示"} {cpuGroups.length} 个纯 CPU 资源组
-            </button>
-          )}
         </div>
 
         <div className="space-y-4">

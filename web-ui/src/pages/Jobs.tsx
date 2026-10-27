@@ -15,7 +15,7 @@ const FILTERS: [string, string, string][] = [
   ["stopped", "已停止", "STOPPING,STOPPED,FAILED"],
   ["all", "全部", ""],
 ];
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 const st = (j: any) => String(field(j, ["status"], "")).toUpperCase();
 const gpuOf = (j: any) => Number(field(j, ["statGpu", "gpuCount", "GPU"], 0)) || 0;
 const NOT_MINE = "不是你通过 qd web 提交的作业，只能查看";

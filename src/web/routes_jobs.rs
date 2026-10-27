@@ -133,7 +133,7 @@ pub(crate) async fn get_job_metrics(
 pub(crate) async fn post_job_submit(
     State(state): State<Arc<WebState>>,
     Extension(user): Extension<CurrentUser>,
-    Json(body): Json<Value>,
+    Json(mut body): Json<Value>,
 ) -> WebResult {
     if !body.is_object() {
         return Err(WebError::bad_request("任务定义必须是 JSON 对象"));
@@ -155,6 +155,14 @@ pub(crate) async fn post_job_submit(
         quota::check(&account.quota, &usage, &space, &group, gpu).map_err(WebError::forbidden)?;
     }
     let api = state.api_for(Some(&space)).await?;
+    // 作业名自动加平台用户名前缀，避免与其他用户的作业混淆
+    let prefix = format!("{}-", api.username().await);
+    if let Some(obj) = body.as_object_mut() {
+        let name = obj.get("jobName").and_then(Value::as_str).unwrap_or_default().to_owned();
+        if !name.starts_with(&prefix) {
+            obj.insert("jobName".to_owned(), Value::String(format!("{prefix}{name}")));
+        }
+    }
     let result = submit_job(&api, &config, body).await?;
     let job_id = result
         .pointer("/data/jobId")

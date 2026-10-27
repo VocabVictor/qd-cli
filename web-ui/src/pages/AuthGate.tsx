@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Lock } from "lucide-react";
 import { api } from "../lib/api";
+import { deviceId } from "../lib/device";
 import { useToast } from "../components/ui";
 
 /** 本机账号墙：只在 `qd web --host` 绑定非 127.0.0.1 时出现。邀请码决定角色
  *  （管理员码 → 管理员，普通码 → 成员，配额 0），由服务端识别，页面上只有一个输入框。 */
-export function AuthGate({ hasAccount, onAuthed }: { hasAccount: boolean; onAuthed: () => void }) {
+export function AuthGate({ hasAccount, notice, onAuthed }: { hasAccount: boolean; notice?: string; onAuthed: () => void }) {
   const toast = useToast();
   const [tab, setTab] = useState<"login" | "register">(hasAccount ? "login" : "register");
   const [u, setU] = useState("");
@@ -37,6 +38,7 @@ export function AuthGate({ hasAccount, onAuthed }: { hasAccount: boolean; onAuth
           <div className="text-[17px] font-semibold">qd 控制台</div>
           <p className="text-aux text-ink-faint mt-1">这台机器已对外开放，需要本机账号才能进入</p>
         </div>
+        {notice && <p className="text-aux text-warn bg-warn/10 rounded-ctl px-3 py-2 mb-4" role="alert" data-testid="auth-notice">{notice}</p>}
         <div className="segmented mb-5" role="tablist">
           <button type="button" role="tab" aria-pressed={tab === "login"} onClick={() => setTab("login")}>登录</button>
           <button type="button" role="tab" aria-pressed={tab === "register"} onClick={() => setTab("register")}>注册</button>
@@ -56,6 +58,7 @@ export function AuthGate({ hasAccount, onAuthed }: { hasAccount: boolean; onAuth
         <button type="submit" className="btn btn-pri w-full h-9 mt-2" disabled={busy}>
           {busy ? "处理中…" : tab === "register" ? "注册并登录" : "登录"}
         </button>
+        <p className="text-[11px] text-ink-faint text-center mt-4">本机设备指纹 <span className="font-mono select-all" data-testid="device-id">{deviceId}</span></p>
       </form>
     </div>
   );

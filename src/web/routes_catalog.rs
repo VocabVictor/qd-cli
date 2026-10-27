@@ -11,16 +11,35 @@
 //! 镜像仓库：每个空间的仓库互不重叠，各自走平台原生分页（按创建时间倒序，
 //! 也就是 imageRepositoryId 倒序），跨空间用 merge_pages 归并；总数是各空间 listCount 之和。
 use crate::*;
+use crate::web::roles::CurrentUser;
 use crate::web::state::*;
 
 use axum::extract::{Query, State};
+use axum::Extension;
 use std::{collections::HashMap, sync::Arc};
 
 /// 平台的 source 取值：current 全部可见，public 公开，shared 空间共享，mine 我创建的。
 const SOURCES: [&str; 4] = ["current", "public", "shared", "mine"];
 
+const CREATOR_FIELDS: &[&str] = &["displayName", "userName", "createUserId", "createDisplayName", "ownerDisplayName"];
+
+/// 普通用户看不到镜像是谁建的：递归去掉所有创建人字段。
+pub(crate) fn strip_creator(value: &mut Value) {
+    match value {
+        Value::Object(obj) => {
+            for &key in CREATOR_FIELDS {
+                obj.remove(key);
+            }
+            obj.values_mut().for_each(strip_creator);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_creator),
+        _ => {}
+    }
+}
+
 pub(crate) async fn list_images(
     State(state): State<Arc<WebState>>,
+    Extension(user): Extension<CurrentUser>,
     Query(query): Query<HashMap<String, String>>,
 ) -> WebResult {
     let page = query_u64(&query, "page", 1, 1, 100_000)?;
@@ -95,6 +114,10 @@ pub(crate) async fn list_images(
         let chunk = page.saturating_mul(size).clamp(1, 500);
         merge_pages(spaces.len(), page, size, chunk, concurrency, key, fetch).await
     };
+    let mut images = Value::Array(images);
+    if !user.is_admin() {
+        strip_creator(&mut images);
+    }
     reply(json!({
         "code": 0,
         "data": {"listCount": total, "imageList": images, "page": page, "size": size, "source": source, "skippedSpaces": skipped}

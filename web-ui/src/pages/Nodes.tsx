@@ -4,7 +4,7 @@ import { api, AppState, fmtMiB, fmtCpu, splitList, field } from "../lib/api";
 import { useCached } from "../lib/cache";
 import { PageBar, Spinner, Table, Th, Td, SortTh, Toolbar, Stat, Pager } from "../components/ui";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 /** 节点是集群级资源：筛选、排序、分页、汇总都交给平台原生接口。 */
 export function Nodes({ state: _state }: { state: AppState }) {

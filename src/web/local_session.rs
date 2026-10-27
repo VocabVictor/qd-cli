@@ -1,46 +1,22 @@
-//! 本机账号 session：公开绑定（--host 非 127.0.0.1）时唯一的访问门槛。
-//! 纯内存 token -> (username, 过期时间)，`qd web` 进程重启即全部失效，不落盘。
+//! 本机账号 session 的请求守卫：公开绑定（--host 非 127.0.0.1）时唯一的访问门槛。
+//! session 本身存在 sessions.rs；普通用户每个请求还要过一遍 login_policy（白名单、环境绑定）。
 
-use super::accounts;
+use super::accounts::{self, Role};
+use super::login_policy::{self, ClientInfo};
+use super::policy_store;
 use super::roles::{CurrentUser, admin_only_route};
 use super::state::WebState;
 use crate::*;
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use axum::{
     Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use rand::RngCore;
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-
-const SESSION_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub(crate) const SESSION_COOKIE: &str = "qd_session";
-
-impl WebState {
-    /// 签发一个新 session token，供登录/注册成功后写进 Set-Cookie。
-    pub(crate) async fn create_session(&self, username: &str) -> String {
-        let mut bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
-        let token = URL_SAFE_NO_PAD.encode(bytes);
-        self.insert_session(token.clone(), username.to_owned(), Instant::now() + SESSION_TTL)
-            .await;
-        token
-    }
-
-    /// token 有效且未过期则返回对应用户名；顺手清掉已过期的记录。
-    pub(crate) async fn session_username(&self, token: &str) -> Option<String> {
-        self.lookup_session(token).await
-    }
-
-    pub(crate) async fn remove_session(&self, token: &str) {
-        self.drop_session(token).await;
-    }
-}
 
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
@@ -78,6 +54,11 @@ fn error_response(status: StatusCode, message: &str) -> Response {
     (status, Json(json!({"ok": false, "error": message}))).into_response()
 }
 
+/// 终端 iframe、静态资源和 WebSocket 由浏览器直接发起，带不上前端加的设备头。
+fn browser_direct(path: &str) -> bool {
+    path == "/terminal" || path.starts_with("/static/") || path.starts_with("/ws/")
+}
+
 /// 公开绑定（--host 非 127.0.0.1）时的唯一防线：没有它，任何能连到这个端口的人
 /// 都能用本机已保存的登录态操作 GPU 平台（看/删作业、进 pod 执行命令等）。
 /// 只放行登录页本身；其余路由必须带有效 session，并把 CurrentUser 放进 extensions
@@ -108,8 +89,10 @@ pub(crate) async fn session_guard(
     let Some(token) = cookie_value(request.headers(), SESSION_COOKIE).map(str::to_owned) else {
         return error_response(StatusCode::UNAUTHORIZED, "未登录，请先在网页里登录");
     };
-    let Some(user) = current_user(&state, &token).await else {
-        return error_response(StatusCode::UNAUTHORIZED, "未登录，请先在网页里登录");
+    let client = login_policy::client_of(&request);
+    let user = match current_user(&state, &token, &client, !browser_direct(&path)).await {
+        Ok(user) => user,
+        Err(message) => return error_response(StatusCode::UNAUTHORIZED, &message),
     };
     if admin_only_route(request.method(), &path) && !user.is_admin() {
         return error_response(StatusCode::FORBIDDEN, "需要管理员权限");
@@ -118,14 +101,36 @@ pub(crate) async fn session_guard(
     next.run(request).await
 }
 
-/// session 有效且账号仍存在才算登录；每次都重新读账号，角色变更/删除立即生效。
-pub(crate) async fn current_user(state: &WebState, token: &str) -> Option<CurrentUser> {
-    let name = state.session_username(token).await?;
-    let account = tokio::task::spawn_blocking(move || accounts::get(&name))
-        .await
-        .ok()?
-        .ok()??;
-    Some(CurrentUser {
+/// session 有效、账号仍存在、（普通用户）登录限制仍满足，才算登录；
+/// 每次都重新读账号和策略，角色变更、删号、改白名单立即生效。
+/// 失败时返回给前端显示的原因；违反策略的 session 会被直接作废。
+pub(crate) async fn current_user(
+    state: &WebState,
+    token: &str,
+    client: &ClientInfo,
+    with_device: bool,
+) -> Result<CurrentUser, String> {
+    let expired = || "未登录，请先在网页里登录".to_owned();
+    let Some(session) = state.sessions.touch(token).await else {
+        return Err(state.sessions.notice(token).await.unwrap_or_else(expired));
+    };
+    let name = session.user.clone();
+    let loaded = tokio::task::spawn_blocking(move || -> Result<_, super::state::WebError> {
+        let Some(account) = accounts::get(&name)? else { return Ok(None) };
+        let policy = policy_store::effective(&account)?;
+        Ok(Some((account, policy)))
+    })
+    .await;
+    let Ok(Ok(Some((account, policy)))) = loaded else {
+        return Err(expired());
+    };
+    if let (Role::User, Some(policy)) = (account.role, policy) {
+        if let Err(reason) = login_policy::check_request(&policy, &session.client, client, with_device) {
+            state.sessions.revoke(token, Some(&reason)).await;
+            return Err(reason);
+        }
+    }
+    Ok(CurrentUser {
         name: account.username,
         role: account.role,
     })

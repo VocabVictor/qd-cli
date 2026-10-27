@@ -1,11 +1,15 @@
 mod accounts;
 mod local_session;
+mod login_override;
+mod login_policy;
 mod ownership;
+mod policy_store;
 mod proxy;
 mod query;
 mod quota;
 mod rate_limit;
 mod roles;
+mod routes_access;
 mod routes_admin;
 mod routes_auth;
 mod routes_catalog;
@@ -13,6 +17,7 @@ mod routes_core;
 mod routes_jobs;
 mod routes_templates;
 mod routes_workloads;
+mod sessions;
 mod state;
 
 use crate::*;
@@ -83,6 +88,10 @@ pub(crate) async fn web_command(config: Config, args: &mut Args, _compact: bool)
         .route("/api/admin/users/{name}/quota", post(routes_admin::post_quota))
         .route("/api/admin/users/{name}/role", post(routes_admin::post_role))
         .route("/api/admin/users/{name}/password", post(routes_admin::post_password))
+        .route("/api/admin/users/{name}/login", post(routes_access::post_user_policy))
+        .route("/api/admin/login-policy", get(routes_access::get_policy).post(routes_access::post_policy))
+        .route("/api/admin/sessions", get(routes_access::list_sessions))
+        .route("/api/admin/sessions/{id}", axum::routing::delete(routes_access::delete_session))
         .route("/api/state", get(routes_core::get_state))
         .route("/api/login", post(routes_core::post_login))
         .route("/api/logout", post(routes_core::post_logout))

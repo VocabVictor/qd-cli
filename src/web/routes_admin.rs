@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 /// GET /api/admin/users
 pub(crate) async fn list_users(State(state): State<Arc<WebState>>) -> WebResult {
-    let accounts = off_thread(accounts::list).await?;
+    let (accounts, global) = off_thread(|| Ok((accounts::list()?, super::policy_store::global()?))).await?;
     let mut users = Vec::with_capacity(accounts.len());
     for account in accounts {
         let usage = ownership::current_usage(&state, &account.username)
@@ -26,6 +26,8 @@ pub(crate) async fn list_users(State(state): State<Arc<WebState>>) -> WebResult 
             "quota": account.quota,
             "usage": usage,
             "createdAt": account.created_at,
+            "effective": super::login_override::resolve(&global, account.login.as_ref()),
+            "login": account.login,
         }));
     }
     reply(json!({"users": users}))
@@ -94,7 +96,7 @@ pub(crate) async fn post_password(
     let password = field(&body, "password")?.to_owned();
     let target = name.clone();
     off_thread(move || accounts::set_password(&target, &password)).await?;
-    state.drop_user_sessions(&name).await;
+    state.drop_user_sessions(&name, Some("管理员重置了你的密码，请用新密码登录")).await;
     reply(json!({"username": name}))
 }
 
@@ -104,6 +106,6 @@ pub(crate) async fn delete_user(
     Path(name): Path<String>,
 ) -> WebResult {
     let removed = off_thread(move || accounts::delete(&name)).await?;
-    state.drop_user_sessions(&removed).await;
+    state.drop_user_sessions(&removed, Some("账号已被管理员删除")).await;
     reply(json!({"removed": removed}))
 }

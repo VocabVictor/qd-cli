@@ -45,19 +45,41 @@ export function Stat({ label, children, sub }: { label: string; children: ReactN
   );
 }
 
-/** 列表底部的分页条：总数、本页范围、上一页 / 下一页。 */
+/** 生成页码列表：始终显示首尾页，当前页附近各展示 1 页，中间用 0 代表省略号。 */
+function pageNums(page: number, pages: number): number[] {
+  const set = new Set<number>();
+  set.add(1); set.add(pages);
+  for (let d = -1; d <= 1; d++) {
+    const p = page + d;
+    if (p >= 1 && p <= pages) set.add(p);
+  }
+  const sorted = [...set].sort((a, b) => a - b);
+  const out: number[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push(0);
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
+/** 列表底部的分页条：总数、页码按钮、上一页 / 下一页。 */
 export function Pager({ page, size, total, count, busy, unit = "个", note, onPage }: {
   page: number; size: number; total: number; count: number; busy?: boolean; unit?: string; note?: ReactNode; onPage: (n: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / size));
   const from = (page - 1) * size + (count ? 1 : 0);
+  const nums = pageNums(page, pages);
   return (
-    <div className="flex items-center gap-3 mt-2 text-[12px] text-ink-faint" data-testid="pager">
+    <div className="flex items-center gap-2 mt-2 text-[12px] text-ink-faint" data-testid="pager">
       <span>共 {total} {unit}，第 {from}–{(page - 1) * size + count} {unit}。</span>
       {note}
       <span className="flex-1" />
       <button className="btn btn-mini" aria-label="上一页" disabled={page <= 1 || busy} onClick={() => onPage(page - 1)}><ChevronLeft size={13} /></button>
-      <span className="tabular-nums text-ink-soft">{page} / {pages}</span>
+      {nums.map((n, i) => n === 0
+        ? <span key={`e${i}`} className="px-0.5">…</span>
+        : <button key={n} className={"btn btn-mini tabular-nums min-w-[26px]" + (n === page ? " bg-brand text-white border-brand" : "")}
+            aria-current={n === page ? "page" : undefined} disabled={busy} onClick={() => onPage(n)}>{n}</button>
+      )}
       <button className="btn btn-mini" aria-label="下一页" disabled={page >= pages || busy} onClick={() => onPage(page + 1)}><ChevronRight size={13} /></button>
     </div>
   );

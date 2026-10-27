@@ -78,7 +78,7 @@ export function App() {
       {booting ? (
         <div className="h-full grid place-items-center"><Spinner label="连接中…" /></div>
       ) : localAuth?.required && !localAuth.loggedIn ? (
-        <AuthGate hasAccount={localAuth.hasAccount} onAuthed={bootstrap} />
+        <AuthGate hasAccount={localAuth.hasAccount} notice={localAuth.notice} onAuthed={bootstrap} />
       ) : !state?.loggedIn ? (
         admin ? <Login onLogin={reload} /> : (
           <div className="h-full grid place-items-center px-4">

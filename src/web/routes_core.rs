@@ -122,7 +122,12 @@ pub(crate) async fn post_call(
         .ok_or_else(|| WebError::bad_request("path 必须以 / 开头"))?
         .to_owned();
     let data = body.get("data").cloned().unwrap_or_else(empty_object);
-    reply(api.send(method, service, &path, data).await?)
+    let mut result = api.send(method, service, &path, data).await?;
+    // 透传接口也不能让普通用户绕过 /api/images 看到镜像创建人
+    if !user.is_admin() && path.to_ascii_lowercase().contains("image") {
+        super::routes_catalog::strip_creator(&mut result);
+    }
+    reply(result)
 }
 
 pub(crate) async fn post_config(Json(body): Json<Value>) -> WebResult {

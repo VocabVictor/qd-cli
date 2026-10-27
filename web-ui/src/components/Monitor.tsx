@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { ExternalLink, Loader2, RotateCw } from "lucide-react";
-import { api, qget, canManageJob, isAdmin } from "../lib/api";
+import { api, qget, canManageJob } from "../lib/api";
 import { Drawer, DrawerTab } from "./Drawer";
 import { LineChart } from "./Chart";
 
@@ -24,7 +24,7 @@ export function Monitor({ job, onClose, initialTab = "metrics" }: { job: Monitor
   const logBox = useRef<HTMLPreElement>(null);
 
   const kind = job?.kind || "job";
-  const canTerminal = !!job && (kind === "dev" ? isAdmin() : canManageJob({ qdOwner: job.owner }));
+  const canTerminal = !!job && (kind === "dev" || canManageJob({ qdOwner: job.owner }));
 
   useEffect(() => {
     if (!job) return;
@@ -66,7 +66,7 @@ export function Monitor({ job, onClose, initialTab = "metrics" }: { job: Monitor
         <DrawerTab active={tab === "metrics"} onClick={() => setTab("metrics")}>性能监控</DrawerTab>
         {kind === "job" && <DrawerTab active={tab === "logs"} onClick={() => setTab("logs")}>运行日志</DrawerTab>}
         <DrawerTab active={tab === "terminal"} onClick={() => setTab("terminal")} disabled={!canTerminal}
-          title={canTerminal ? undefined : kind === "dev" ? "开发机终端只对管理员开放" : "只能进入自己提交的作业的终端"}>网页终端</DrawerTab>
+          title={canTerminal ? undefined : "只能进入自己提交的作业的终端"}>网页终端</DrawerTab>
         <div className="flex-1" />
         {tab === "metrics" && <span className="text-[11px] text-ink-faint">近 10 分钟，每 5 秒刷新</span>}
         {tab === "logs" && <button className="btn btn-ghost btn-mini" onClick={loadLogs}><RotateCw size={12} />刷新日志</button>}

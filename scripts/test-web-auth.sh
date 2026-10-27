@@ -162,7 +162,7 @@ expect "成员删除不属于自己的作业" 403
 req GET "/api/terminal-url?kind=job&id=999999" "$(jar alice)"
 expect "成员进不属于自己作业的终端" 403
 req GET "/api/terminal-url?kind=dev&id=123" "$(jar alice)"
-expect "成员进开发机终端" 403
+expect "成员进开发机终端（权限放行，平台未登录）" 401
 req POST /api/exec "$(jar alice)" '{"kind":"job","id":"999999","command":["id"]}'
 expect "成员在别人作业里 exec" 403
 
@@ -222,8 +222,124 @@ expect "管理员删除成员" 200
 req GET /api/state "$(jar alice)"
 expect "被删成员的 session 立即失效" 401
 
+echo "=== 5c. 登录限制：单点登录、环境绑定、白名单 ==="
+req POST /api/auth/register "$(jar carol)" "{\"username\":\"carol\",\"password\":\"carolpass1\",\"inviteCode\":\"$USER_CODE\"}" -H "X-QD-Device: devaaaa1111" -A "UA-one"
+expect "注册 carol" 200
+req GET /api/admin/login-policy "$(jar admin)"
+has "默认策略是踢掉旧会话" '"sessionMode":"kick"'
+
+# 默认 kick：第二处登录把第一处挤掉，并告诉第一处原因
+req POST /api/auth/login "$(jar carol2)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devbbbb2222" -A "UA-two"
+expect "carol 在第二处登录" 200
+req GET /api/auth/state "$(jar carol)" "" -H "X-QD-Device: devaaaa1111" -A "UA-one"
+has "第一处被挤下线" '"loggedIn":false'
+has "第一处看到被挤原因" "别处登录"
+
+# 绑定浏览器 + 设备：换 UA 或换设备都掉线
+req GET /api/state "$(jar carol2)" "" -H "X-QD-Device: devbbbb2222" -A "UA-other"
+expect "换浏览器后会话失效" 401
+has "提示登录环境变了" "浏览器"
+req POST /api/auth/login "$(jar carol3)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devcccc3333" -A "UA-three"
+req GET /api/auth/state "$(jar carol3)" "" -H "X-QD-Device: devdddd4444" -A "UA-three"
+has "换设备指纹后会话失效" '"loggedIn":false'
+
+# deny 模式：在线时拒绝第二处登录
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"deny","bind":[],"ipAllow":[],"deviceAllow":[]}'
+expect "管理员改成拒绝新登录" 200
+req POST /api/auth/login "$(jar carol)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devaaaa1111"
+expect "deny 模式首次登录" 200
+req POST /api/auth/login "$(jar carol2)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devbbbb2222"
+expect "deny 模式下第二处登录被拒" 403
+has "拒绝原因说明正在别处使用" "只能在一处登录"
+req POST /api/auth/logout "$(jar carol)" "{}"
+req POST /api/auth/login "$(jar carol2)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devbbbb2222"
+expect "第一处退出后第二处可以登录" 200
+
+# 管理员不受限
+req POST /api/auth/login "$(jar admin2)" '{"username":"boss","password":"bosspass123"}'
+expect "deny 模式下管理员仍可多处登录" 200
+
+# 在线会话与踢下线
+req GET /api/admin/sessions "$(jar admin)"
+expect "管理员列出在线会话" 200
+has "会话列表含 carol 的设备指纹" '"device":"devbbbb2222"'
+SID=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(next(s["id"] for s in d["data"]["sessions"] if s["username"]=="carol"))' "$BODY" 2>/dev/null)
+req DELETE "/api/admin/sessions/$SID" "$(jar admin)"
+expect "管理员踢 carol 下线" 200
+req GET /api/auth/state "$(jar carol2)" "" -H "X-QD-Device: devbbbb2222"
+has "被踢后看到管理员下线提示" "管理员强制下线"
+
+# IP 白名单（测试都从 127.0.0.1 发起）
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":["10.0.0.0/8"],"deviceAllow":[]}'
+expect "设置不含本机的 IP 白名单" 200
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}'
+expect "白名单外 IP 登录被拒" 403
+has "提示 IP 不在白名单" "白名单"
+req POST /api/auth/register "" "{\"username\":\"dave\",\"password\":\"davepass12\",\"inviteCode\":\"$USER_CODE\"}"
+expect "白名单外 IP 用普通邀请码注册被拒" 403
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":["127.0.0.0/8"],"deviceAllow":[]}'
+req POST /api/auth/login "$(jar carol)" '{"username":"carol","password":"carolpass1"}'
+expect "白名单内 IP 登录成功" 200
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":["10.0.0.0/8"],"deviceAllow":[]}'
+req GET /api/state "$(jar carol)"
+expect "收紧白名单后已登录成员立即失效" 401
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":["10.0.0.0/40"],"deviceAllow":[]}'
+expect "非法 CIDR 被拒" 400
+
+# 单个账号逐项覆盖：全局放开，carol 只单独设置设备白名单，其他项跟随全局
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":[],"deviceAllow":[]}'
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":{"deviceAllow":{"mode":"replace","items":["devaaaa1111"]}}}'
+expect "给 carol 单独设置设备白名单" 200
+has "其他项仍跟随全局（单点登录 off）" '"sessionMode":"off"'
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devzzzz9999"
+expect "白名单外设备登录被拒" 403
+req POST /api/auth/login "$(jar carol)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devaaaa1111"
+expect "白名单内设备登录成功" 200
+
+# 全局收紧 IP：carol 只跟随这一项，所以立刻受影响
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":["10.0.0.0/8"],"deviceAllow":[]}'
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devaaaa1111"
+expect "carol 的 IP 白名单跟随全局，全局收紧后被拒" 403
+# 在全局之上为 carol 追加本机 IP
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":{"ipAllow":{"mode":"extend","items":["127.0.0.1"]},"deviceAllow":{"mode":"replace","items":["devaaaa1111"]}}}'
+expect "给 carol 在全局 IP 白名单上追加本机" 200
+has "合并后的 IP 白名单含全局和追加项" '"ipAllow":["10.0.0.0/8","127.0.0.1"]'
+req POST /api/auth/login "$(jar carol)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devaaaa1111"
+expect "追加后 carol 能从本机登录" 200
+req POST /api/auth/register "" "{\"username\":\"erin\",\"password\":\"erinpass12\",\"inviteCode\":\"$USER_CODE\"}"
+expect "其他成员仍受全局 IP 白名单约束（注册被拒）" 403
+
+# 单独设置单点登录：先用 kick 清掉前面不限制模式下留下的多个会话，再测 deny
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":{"sessionMode":"kick","ipAllow":{"mode":"replace","items":[]}}}'
+expect "carol 单独设为踢掉旧会话" 200
+req POST /api/auth/login "$(jar carol)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devaaaa1111"
+req POST /api/auth/logout "$(jar carol)" "{}"
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":{"sessionMode":"deny","ipAllow":{"mode":"replace","items":[]}}}'
+expect "carol 单独设为拒绝新登录、IP 不限" 200
+req POST /api/auth/login "$(jar carol)" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devaaaa1111"
+expect "carol 第一处登录" 200
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devbbbb2222"
+expect "carol 单独的 deny 生效：第二处被拒" 403
+
+# 免除限制
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":{"exempt":true}}'
+expect "免除 carol 的登录限制" 200
+has "免除后实际生效为不受限" '"effective":null'
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devbbbb2222"
+expect "免除后可同时多处登录" 200
+
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":{"ipAllow":{"mode":"extend","items":["bad-ip"]}}}'
+expect "覆盖里的非法 IP 被拒" 400
+req POST /api/admin/users/carol/login "$(jar admin)" '{"login":null}'
+expect "carol 全部恢复跟随全局" 200
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devzzzz9999"
+expect "恢复全局后受全局 IP 白名单约束" 403
+req POST /api/admin/login-policy "$(jar admin)" '{"sessionMode":"off","bind":[],"ipAllow":[],"deviceAllow":[]}'
+req POST /api/auth/login "" '{"username":"carol","password":"carolpass1"}' -H "X-QD-Device: devzzzz9999"
+expect "全局放开后任意设备可登录" 200
+
 echo "=== 6. 文件权限 ==="
-for f in web-accounts.json; do
+for f in web-accounts.json web-login.json; do
   path="$XDG_CONFIG_HOME/qd/$f"
   perm=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
   [ "$perm" = "600" ] && pass "$f 权限为 600" || fail "$f 权限是 $perm"

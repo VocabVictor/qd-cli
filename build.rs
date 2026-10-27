@@ -1,5 +1,7 @@
 // 构建时生成前端包到 OUT_DIR，供 src/web/mod.rs 通过 include_str! 内嵌。
 // index.html 是构建产物，不进 git；每次 build.rs 重跑都用 npm 重新构建（需 Node）。
+// 如果 web-ui/dist/index.html 已经存在且没有 node_modules，说明是预构建的源码包，
+// 跳过前端构建直接复制——这样不装 Node 的服务器也能编译后端。
 use std::{env, fs, path::Path, process::Command};
 
 fn main() {
@@ -11,11 +13,14 @@ fn main() {
     let dest = Path::new(&out_dir).join("index.html");
     let dist = Path::new("web-ui").join("dist").join("index.html");
 
-    // build.rs 只在上面声明的路径变化时重跑，所以一旦重跑就必须重新构建前端。
-    // 曾经这里是 `if !dist.exists()`，结果本地改完 web-ui/src 后仍然把上一次的
-    // 陈旧 dist 拷进二进制，前端改动被静默丢弃。
+    let has_node_env = Path::new("web-ui").join("node_modules").exists();
+    if dist.exists() && !has_node_env {
+        fs::copy(&dist, &dest).expect("复制前端 index.html 到 OUT_DIR 失败");
+        return;
+    }
+
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
-    if !Path::new("web-ui").join("node_modules").exists() {
+    if !has_node_env {
         let install = Command::new(npm)
             .args(["ci", "--no-audit", "--no-fund"])
             .current_dir("web-ui")

@@ -44,6 +44,9 @@ pub(crate) struct WebAccount {
     pub(crate) quota: Quota,
     #[serde(default)]
     pub(crate) created_at: i64,
+    /// 这个账号对全局登录限制的逐项覆盖；None 表示全部跟随全局
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) login: Option<super::login_override::LoginOverride>,
 }
 
 fn accounts_path() -> Result<PathBuf, WebError> {
@@ -146,6 +149,7 @@ pub(crate) fn register(username: &str, password: &str, role: Role) -> Result<(),
             role,
             quota: Quota::default(),
             created_at: unix_millis() as i64 / 1000,
+            login: None,
         });
         Ok(((), true))
     })
@@ -191,6 +195,14 @@ pub(crate) fn set_quota(username: &str, quota: Quota) -> Result<(), WebError> {
     edit(|list| {
         let index = position(list, username)?;
         list[index].quota = quota;
+        Ok(((), true))
+    })
+}
+
+pub(crate) fn set_login(username: &str, login: Option<super::login_override::LoginOverride>) -> Result<(), WebError> {
+    edit(|list| {
+        let index = position(list, username)?;
+        list[index].login = login;
         Ok(((), true))
     })
 }

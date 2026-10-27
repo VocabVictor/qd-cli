@@ -1,5 +1,5 @@
 use crate::*;
-use crate::web::roles::{CurrentUser, require_admin, require_owner};
+use crate::web::roles::{CurrentUser, require_owner};
 use crate::web::state::*;
 
 use axum::{
@@ -99,7 +99,7 @@ pub(crate) async fn get_idle(
     reply(json!({"listCount": groups.len(), "groups": groups, "failedSpaces": failed_spaces}))
 }
 
-/// 普通用户只能进自己提交的作业；开发机没有归属记录，只给管理员。
+/// 普通用户只能进自己提交的作业；开发机所有登录用户都可以连。
 /// 在拿平台客户端之前调用，保证无权限时稳定返回 403 而不是平台登录相关的错误。
 fn authorize_terminal(user: &CurrentUser, query: &HashMap<String, String>) -> Result<(), WebError> {
     let id = query
@@ -109,7 +109,7 @@ fn authorize_terminal(user: &CurrentUser, query: &HashMap<String, String>) -> Re
     validate_id(id, "ID")?;
     match query.get("kind").map(String::as_str) {
         Some("job") => require_owner(user, id),
-        Some("dev") => require_admin(user),
+        Some("dev") => Ok(()),
         _ => Err(WebError::bad_request("kind 只接受 job 或 dev")),
     }
 }

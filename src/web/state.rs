@@ -2,7 +2,6 @@ use crate::*;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use axum::{
     Json,
@@ -37,8 +36,8 @@ pub(crate) struct WebState {
     /// 公开绑定时必须设置：普通邀请码注册普通用户（配额 0），管理员邀请码注册管理员。
     pub(crate) invite_user: Option<String>,
     pub(crate) invite_admin: Option<String>,
-    /// token -> (username, 过期时间)。重启进程即丢失，不持久化。
-    local_sessions: tokio::sync::RwLock<HashMap<String, (String, Instant)>>,
+    /// 本机账号 session（含登录来源），重启进程即丢失，不持久化。
+    pub(crate) sessions: super::sessions::SessionStore,
     pub(crate) auth_limiter: super::rate_limit::AuthLimiter,
 }
 
@@ -53,33 +52,14 @@ impl WebState {
             public,
             invite_user: invites.0,
             invite_admin: invites.1,
-            local_sessions: tokio::sync::RwLock::new(HashMap::new()),
+            sessions: Default::default(),
             auth_limiter: Default::default(),
         }
     }
 
-    /// 底层存取给 local_session.rs 用：这里才摸得到私有的 local_sessions 字段。
-    pub(crate) async fn insert_session(&self, token: String, username: String, expires: Instant) {
-        self.local_sessions.write().await.insert(token, (username, expires));
-    }
-
-    /// token 有效且未过期则返回对应用户名；顺手清掉已过期的记录。
-    pub(crate) async fn lookup_session(&self, token: &str) -> Option<String> {
-        let mut sessions = self.local_sessions.write().await;
-        sessions.retain(|_, (_, expires)| *expires > Instant::now());
-        sessions.get(token).map(|(username, _)| username.clone())
-    }
-
-    pub(crate) async fn drop_session(&self, token: &str) {
-        self.local_sessions.write().await.remove(token);
-    }
-
     /// 删除/降级账号后踢掉该用户的全部 session 和终端授权。
-    pub(crate) async fn drop_user_sessions(&self, username: &str) {
-        self.local_sessions
-            .write()
-            .await
-            .retain(|_, (owner, _)| !owner.eq_ignore_ascii_case(username));
+    pub(crate) async fn drop_user_sessions(&self, username: &str, reason: Option<&str>) {
+        self.sessions.revoke_user(username, reason, None).await;
         self.terminal_grants.write().await.remove(username);
     }
 

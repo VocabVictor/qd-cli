@@ -79,8 +79,12 @@ try {
     return false;
   };
   const shot = (page, name, full = false) => page.screenshot({ path: join(shots, name), fullPage: full });
+  // 默认登录策略绑定设备指纹：页面外直接 fetch 也要带上同一个 X-QD-Device，否则会被当成换了设备踢下线
+  const devices = new Map();
+  const deviceOf = (page) => devices.get(page);
   const register = async (page, user, pass, code) => {
     await page.waitForSelector("#auth-user");
+    devices.set(page, (await page.getByTestId("device-id").innerText()).trim());
     if (await page.getByRole("tab", { name: "注册" }).getAttribute("aria-pressed") !== "true") await page.getByRole("tab", { name: "注册" }).click();
     await page.fill("#auth-user", user);
     await page.fill("#auth-pass", pass);
@@ -114,9 +118,7 @@ try {
     const summary = await A.page.locator("section", { hasText: "空闲 GPU" }).first().innerText();
     check(`资源摘要显示 ${freeTotal} / ${cardTotal} 卡空闲`, summary.replace(/\s+/g, " ").includes(`${freeTotal} / ${cardTotal} 卡`), summary);
     check("资源组表列出 A100 训练池", await A.page.locator("table").getByText("A100 训练池").isVisible());
-    check("纯 CPU 资源组默认收起", !(await A.page.locator("table").getByText("CPU 通用池").isVisible()));
-    await A.page.getByRole("button", { name: /显示 1 个纯 CPU 资源组/ }).click();
-    check("点开后显示纯 CPU 资源组", await A.page.locator("table").getByText("CPU 通用池").isVisible());
+    check("纯 CPU 资源组直接列出，不再折叠", await A.page.locator("table").getByText("CPU 通用池").isVisible());
     check("概览列出我的作业 llama-sft-baseline", await A.page.getByText("llama-sft-baseline").first().isVisible());
     await A.page.mouse.move(0, 0);
     await shot(A.page, "02-overview.png", true);
@@ -144,8 +146,8 @@ try {
   // ---------- 4. 管理员分配配额 ----------
   await step("管理员分配配额", async () => {
     await A.page.getByRole("button", { name: "用户与配额" }).click();
-    await A.page.waitForSelector("text=alice");
-    const row = A.page.locator(".card", { hasText: "alice" }).first();
+    await A.page.waitForSelector("[data-user=alice]");
+    const row = A.page.locator("[data-user=alice]");
     await row.getByLabel("总配额（全部空间） 上限").fill("4");
     await row.getByLabel("训练空间 上限", { exact: true }).fill("4");
     await A.page.waitForSelector("text=A100 训练池");
@@ -245,7 +247,7 @@ try {
     await B.page.waitForSelector("[role=dialog] [data-metric]");
     check("别人的作业：监控可看", true);
     check("别人的作业：终端页签禁用", await B.page.getByRole("tab", { name: "网页终端" }).isDisabled());
-    const forbidden = await B.page.evaluate(async (id) => (await fetch(`/api/terminal-url?kind=job&id=${id}`)).status, "880001");
+    const forbidden = await B.page.evaluate(async ([id, dev]) => (await fetch(`/api/terminal-url?kind=job&id=${id}`, { headers: { "X-QD-Device": dev } })).status, ["880001", deviceOf(B.page)]);
     check("直接请求别人作业的终端地址返回 403", forbidden === 403, String(forbidden));
     await B.page.keyboard.press("Escape");
     check("Esc 能关掉监控抽屉", (await B.page.locator("[role=dialog]").count()) === 0);
@@ -259,23 +261,30 @@ try {
     const act = (j) => (["RUNNING", "CREATED", "WAITING", "STOPPING"].includes(j.status) ? 1 : 0);
     const byTime = [...platform.jobs].sort((a, b) => (act(b) - act(a)) || (b.createTime - a.createTime)).map((j) => j.jobId);
     await pg.getByRole("tab", { name: /全部/ }).click();
-    await pg.waitForFunction(() => document.querySelectorAll("tbody tr[data-job]").length === 50, null, { timeout: 10000 });
+    await pg.waitForFunction(() => document.querySelectorAll("tbody tr[data-job]").length === 20, null, { timeout: 10000 });
     check(`「全部」计数等于平台作业总数 ${platform.jobs.length}`, (await pg.getByRole("tab", { name: /全部/ }).innerText()).includes(String(platform.jobs.length)));
-    check("第 1 页 50 条，跨项目按平台原生顺序（未结束在前，再按创建时间倒序）", JSON.stringify(await ids()) === JSON.stringify(byTime.slice(0, 50)));
+    check("第 1 页 20 条，跨项目按平台原生顺序（未结束在前，再按创建时间倒序）", JSON.stringify(await ids()) === JSON.stringify(byTime.slice(0, 20)));
     check("分页条显示总数", (await pg.getByTestId("pager").innerText()).includes(`共 ${platform.jobs.length} 个`));
     const before = platform.listCalls.length;
     await pg.getByRole("button", { name: "下一页" }).click();
-    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[50], { timeout: 10000 });
-    check("第 2 页接着第 1 页的顺序", JSON.stringify(await ids()) === JSON.stringify(byTime.slice(50, 100)));
-    const lastPage = Math.ceil(platform.jobs.length / 50);
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[20], { timeout: 10000 });
+    check("第 2 页接着第 1 页的顺序", JSON.stringify(await ids()) === JSON.stringify(byTime.slice(20, 40)));
+    const lastPage = Math.ceil(platform.jobs.length / 20);
+    await pg.getByRole("button", { name: String(lastPage), exact: true }).click();
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[(lastPage - 1) * 20], { timeout: 10000 });
+    check("点页码直接跳到最后一页", (await pg.locator("[data-testid=pager] [aria-current=page]").innerText()) === String(lastPage));
+    await pg.getByRole("button", { name: "1", exact: true }).click();
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[0], { timeout: 10000 });
+    await pg.getByRole("button", { name: "下一页" }).click();
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[20], { timeout: 10000 });
     for (let n = 2; n < lastPage; n++) {
       await pg.getByRole("button", { name: "下一页" }).click();
-      await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[n * 50], { timeout: 10000 });
+      await pg.waitForFunction((first) => document.querySelector("tbody tr[data-job]")?.getAttribute("data-job") === first, byTime[n * 20], { timeout: 10000 });
     }
-    check("最后一页只剩余下的条数", (await rows().count()) === platform.jobs.length - (lastPage - 1) * 50);
+    check("最后一页只剩余下的条数", (await rows().count()) === platform.jobs.length - (lastPage - 1) * 20);
     check("下一页按钮在最后一页禁用", await pg.getByRole("button", { name: "下一页" }).isDisabled());
     const calls = platform.listCalls.slice(before);
-    check("翻页时每次向平台只要需要的量（pageSize ≤ 页码 × 50）", calls.length > 0 && calls.every((c) => c.pageSize <= lastPage * 50), JSON.stringify(calls.slice(0, 3)));
+    check("翻页时每次向平台只要需要的量（pageSize ≤ 页码 × 20）", calls.length > 0 && calls.every((c) => c.pageSize <= lastPage * 20), JSON.stringify(calls.slice(0, 3)));
 
     await pg.getByRole("tab", { name: /已停止/ }).click();
     const stopped = platform.jobs.filter((j) => ["STOPPING", "STOPPED", "FAILED"].includes(j.status)).length;
@@ -302,16 +311,16 @@ try {
     const total = platform.nodes.length;
     const names = () => pg.locator("tbody tr[data-node]").evaluateAll((els) => els.map((e) => e.getAttribute("data-node")));
     const rank = [...platform.nodes].sort((a, b) => (b.gpuLeft - a.gpuLeft) || a.name.localeCompare(b.name)).map((n) => n.name);
-    check(`节点共 ${total} 个，第 1 页 50 个`, (await pg.getByTestId("pager").innerText()).includes(`共 ${total} 个`) && (await names()).length === 50);
-    check("默认按空闲卡倒序（平台 sortField=left_gpu_count）", JSON.stringify(await names()) === JSON.stringify(rank.slice(0, 50)));
+    check(`节点共 ${total} 个，第 1 页 20 个`, (await pg.getByTestId("pager").innerText()).includes(`共 ${total} 个`) && (await names()).length === 20);
+    check("默认按空闲卡倒序（平台 sortField=left_gpu_count）", JSON.stringify(await names()) === JSON.stringify(rank.slice(0, 20)));
     await pg.getByRole("button", { name: "下一页" }).click();
-    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-node]")?.getAttribute("data-node") === first, rank[50], { timeout: 10000 });
-    check(`第 2 页剩 ${total - 50} 个`, (await names()).length === total - 50);
-    check("翻页时向平台要 pageNum=2", platform.nodeCalls.some((c) => c.pageNum === 2 && c.pageSize === 50));
+    await pg.waitForFunction((first) => document.querySelector("tbody tr[data-node]")?.getAttribute("data-node") === first, rank[20], { timeout: 10000 });
+    check("第 2 页接着第 1 页", JSON.stringify(await names()) === JSON.stringify(rank.slice(20, 40)));
+    check("翻页时向平台要 pageNum=2", platform.nodeCalls.some((c) => c.pageNum === 2 && c.pageSize === 20));
     await pg.check("text=只看有空闲卡的");
     const free = platform.nodes.filter((n) => n.gpuLeft >= 1);
     await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), free.length, { timeout: 10000 });
-    check(`「只看有空闲卡的」交给平台 leftGpuCount，剩 ${free.length} 个并回到第 1 页`, (await pg.getByTestId("pager").innerText()).includes("1 / 1") && platform.nodeCalls.some((c) => c.leftGpuCount === 1));
+    check(`「只看有空闲卡的」交给平台 leftGpuCount，剩 ${free.length} 个并回到第 1 页`, (await pg.locator("[data-testid=pager] [aria-current=page]").innerText()) === "1" && await pg.getByRole("button", { name: "下一页" }).isDisabled() && platform.nodeCalls.some((c) => c.leftGpuCount === 1));
     const freeGpu = free.reduce((a, n) => a + n.gpuTotal, 0);
     check(`汇总用平台按筛选算出的总量（${freeGpu} 卡）`, (await pg.locator("section[aria-label='筛选范围内的资源汇总']").innerText()).includes(`共 ${freeGpu} 卡`));
     await pg.uncheck("text=只看有空闲卡的");
@@ -342,11 +351,14 @@ try {
     const ids = () => pg.locator("tbody tr[data-repo]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-repo"))));
     const order = [...platform.repos].sort((a, b) => b.imageRepositoryId - a.imageRepositoryId).map((r) => r.imageRepositoryId);
     check(`镜像共 ${platform.repos.length} 个（两个空间之和）`, (await pg.getByTestId("pager").innerText()).includes(`共 ${platform.repos.length} 个`));
-    check("第 1 页 50 个，跨空间按创建顺序（id 倒序）归并", JSON.stringify(await ids()) === JSON.stringify(order.slice(0, 50)));
+    check("第 1 页 20 个，跨空间按创建顺序（id 倒序）归并", JSON.stringify(await ids()) === JSON.stringify(order.slice(0, 20)));
+    check("成员看不到镜像创建人列", !(await pg.locator("thead").innerText()).includes("创建人"));
+    const leaked = await pg.evaluate(async (dev) => JSON.stringify(await (await fetch("/api/images?size=5", { headers: { "X-QD-Device": dev } })).json()), deviceOf(pg));
+    check("后端不给成员返回创建人字段", !/displayName|userName|createUserId/.test(leaked), leaked.slice(0, 200));
     await pg.getByRole("button", { name: "下一页" }).click();
-    await pg.waitForFunction((first) => Number(document.querySelector("tbody tr[data-repo]")?.getAttribute("data-repo")) === first, order[50], { timeout: 10000 });
-    check("第 2 页接着第 1 页", JSON.stringify(await ids()) === JSON.stringify(order.slice(50, 100)));
-    check("每个空间都用原生 pageNum/pageSize 取", ["s1", "s2"].every((sp) => platform.imageCalls.some((c) => c.space === sp && c.pageSize <= 100)));
+    await pg.waitForFunction((first) => Number(document.querySelector("tbody tr[data-repo]")?.getAttribute("data-repo")) === first, order[20], { timeout: 10000 });
+    check("第 2 页接着第 1 页", JSON.stringify(await ids()) === JSON.stringify(order.slice(20, 40)));
+    check("每个空间都用原生 pageNum/pageSize 取", ["s1", "s2"].every((sp) => platform.imageCalls.some((c) => c.space === sp && c.pageSize <= 40)));
     const shared = platform.repos.filter((r) => r.accessType === 2).length;
     await pg.getByRole("tab", { name: /空间共享/ }).click();
     await pg.waitForFunction((n) => document.querySelector("[data-testid=pager]")?.textContent?.includes(`共 ${n} 个`), shared, { timeout: 10000 });
@@ -378,6 +390,52 @@ try {
     await B.page.reload({ waitUntil: "networkidle" });
     await B.page.waitForSelector("aside nav");
     check("取消后配额释放为 0 / 4 卡", await B.page.locator("aside").getByText("GPU 已用 0 / 4 卡").isVisible());
+  });
+
+  // ---------- 7b. 登录安全：单点登录踢下线、管理员看在线会话、换设备掉线 ----------
+  await step("登录安全", async () => {
+    await A.page.getByRole("button", { name: "用户与配额" }).click();
+    await A.page.waitForSelector("[data-session]", { timeout: 10000 });
+    check("管理员能看到成员登录限制设置", await A.page.getByText("成员登录限制").isVisible());
+    check("在线会话里有 alice 和她的设备指纹", (await A.page.locator("[data-session=alice]").innerText()).includes(deviceOf(B.page)));
+    // 单个成员逐项覆盖：只把 alice 的单点登录改成「不限制」，其余跟随全局
+    const card = A.page.locator("[data-user=alice]");
+    await card.getByRole("button", { name: /登录限制/ }).click();
+    await card.getByRole("group", { name: "单点登录来源" }).getByRole("button", { name: "单独设置" }).click();
+    await card.getByLabel("不限制").check();
+    await card.getByRole("button", { name: "保存登录限制" }).click();
+    check("单个成员的登录限制保存成功", await waitToast(A.page, /alice 的登录限制已保存/));
+    await A.page.waitForFunction(() => document.querySelector("[data-user=alice] [data-testid=effective]")?.textContent?.includes("不限制；"), null, { timeout: 10000 });
+    check("实际生效里单点登录是「不限制」，绑定仍跟随全局", (await card.getByTestId("effective").innerText()).includes("绑定 浏览器、设备指纹"));
+    check("卡片标出有单独设置", (await card.innerText()).includes("有单独设置"));
+    await shot(A.page, "12-login-rules.png", true);
+    // 恢复跟随全局，后面的踢下线测试按全局的「踢掉旧会话」执行
+    await card.getByRole("button", { name: "全部恢复跟随全局" }).click();
+    check("恢复跟随全局", await waitToast(A.page, /alice 的登录限制已保存/));
+    await A.page.waitForFunction(() => document.querySelector("[data-user=alice]")?.textContent?.includes("全部跟随全局"), null, { timeout: 10000 });
+    // alice 在另一个浏览器上下文登录，默认策略会把 B 挤下线
+    const C = await open();
+    await C.page.waitForSelector("#auth-user");
+    await C.page.fill("#auth-user", "alice");
+    await C.page.fill("#auth-pass", "alicepass1");
+    await C.page.click("form button[type=submit]");
+    await C.page.waitForSelector("aside nav", { timeout: 10000 });
+    await B.page.reload({ waitUntil: "networkidle" });
+    await B.page.waitForSelector("[data-testid=auth-notice]", { timeout: 10000 });
+    check("旧页面被挤下线并说明原因", (await B.page.getByTestId("auth-notice").innerText()).includes("别处登录"));
+    await shot(B.page, "13-kicked.png");
+    // 伪造设备头访问：会话立即作废
+    const status = await C.page.evaluate(async () => (await fetch("/api/state", { headers: { "X-QD-Device": "ffffffffffffffff" } })).status);
+    check("换设备指纹的请求返回 401", status === 401, String(status));
+    await C.page.reload({ waitUntil: "networkidle" });
+    await C.page.waitForSelector("[data-testid=auth-notice]", { timeout: 10000 });
+    check("换设备后提示登录环境变了", (await C.page.getByTestId("auth-notice").innerText()).includes("登录环境变了"));
+    await C.ctx.close();
+    // B 重新登录，供后面的退出步骤使用
+    await B.page.fill("#auth-user", "alice");
+    await B.page.fill("#auth-pass", "alicepass1");
+    await B.page.click("form button[type=submit]");
+    await B.page.waitForSelector("aside nav", { timeout: 10000 });
   });
 
   // ---------- 8. 退出 ----------

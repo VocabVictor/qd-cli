@@ -1,3 +1,4 @@
+import { deviceId } from "./device";
 export interface AppState {
   loggedIn: boolean;
   username?: string;
@@ -21,9 +22,22 @@ export interface LocalAuthState {
   role?: "admin" | "user";
   quota?: GpuLimits;
   usage?: GpuLimits;
+  /** 上一个会话为什么失效：在别处登录、登录环境变化、被管理员踢下线等 */
+  notice?: string;
 }
 
-export interface AdminUser { username: string; role: "admin" | "user"; quota: GpuLimits; usage: GpuLimits; createdAt: number }
+export type BindKind = "ip" | "subnet" | "agent" | "device";
+/** 普通用户的登录限制；管理员不受限。 */
+export interface LoginPolicy { sessionMode: "off" | "kick" | "deny"; bind: BindKind[]; ipAllow: string[]; deviceAllow: string[] }
+export type ListMode = "inherit" | "extend" | "replace";
+/** 单个成员对全局登录限制的逐项覆盖：null / 缺省表示跟随全局。 */
+export interface LoginOverride {
+  exempt: boolean; sessionMode: LoginPolicy["sessionMode"] | null; bind: BindKind[] | null;
+  ipAllow: { mode: ListMode; items: string[] }; deviceAllow: { mode: ListMode; items: string[] };
+}
+export interface LiveSession { id: string; username: string; ip: string; agent: string; device: string; createdAt: number; seenAt: number; online: boolean }
+
+export interface AdminUser { username: string; role: "admin" | "user"; quota: GpuLimits; usage: GpuLimits; createdAt: number; login?: LoginOverride | null; effective?: LoginPolicy | null }
 
 /** 当前本机用户，App 启动时写入，页面据此隐藏无权限的按钮（服务端仍会再校验）。 */
 let me: LocalAuthState = { required: false, hasAccount: true, loggedIn: true, role: "admin" };
@@ -34,7 +48,9 @@ export const isAdmin = () => me.role === "admin";
 export const canManageJob = (job: any) => isAdmin() || (!!me.username && String(job?.qdOwner || "").toLowerCase() === me.username.toLowerCase());
 
 async function qfetch<T = any>(url: string, opts?: RequestInit): Promise<T> {
-  const r = await fetch(url, opts);
+  const headers = new Headers(opts?.headers);
+  headers.set("X-QD-Device", deviceId);
+  const r = await fetch(url, { ...opts, headers });
   let j: any = null;
   try { j = await r.json(); } catch { throw new Error("响应不是 JSON (HTTP " + r.status + ")"); }
   // 登录/注册接口的 401 是"密码或邀请码不对"，交给表单自己提示；其他接口的 401 才表示会话失效。
@@ -97,6 +113,11 @@ export const api = {
     setRole: (name: string, role: "admin" | "user") => qpost(`/api/admin/users/${encodeURIComponent(name)}/role`, { role }),
     resetPassword: (name: string, password: string) => qpost(`/api/admin/users/${encodeURIComponent(name)}/password`, { password }),
     remove: (name: string) => qfetch(`/api/admin/users/${encodeURIComponent(name)}`, { method: "DELETE" }),
+    policy: () => qget<{ policy: LoginPolicy }>("/api/admin/login-policy"),
+    setPolicy: (policy: LoginPolicy) => qpost("/api/admin/login-policy", policy),
+    setUserLogin: (name: string, login: LoginOverride | null) => qpost(`/api/admin/users/${encodeURIComponent(name)}/login`, { login }),
+    sessions: () => qget<{ sessions: LiveSession[] }>("/api/admin/sessions"),
+    kick: (id: string) => qfetch(`/api/admin/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
 };
 
