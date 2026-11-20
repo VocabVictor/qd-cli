@@ -12,19 +12,24 @@ pub(crate) async fn dev_terminal_transport(
     if status != "RUNNING" {
         bail!("开发环境 {id} 当前状态为 {status}，请先启动");
     }
-    if let Some(connection) = data
-        .pointer("/devJobDetail/taskroleList/0/instanceList/0/sshConnection")
+    let instance = data
+        .pointer("/devJobDetail/taskroleList/0/instanceList/0")
+        .context("平台未返回开发环境实例")?;
+    if let Some(terminal_url) = instance
+        .get("terminalUrl")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty() && *value != "-")
+    {
+        return dev_web_terminal(api, terminal_url, remote_command).await;
+    }
+    if let Some(connection) = instance
+        .get("sshConnection")
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty() && *value != "-")
     {
         return dev_system_ssh(connection, remote_command);
     }
-    let terminal_url = data
-        .pointer("/devJobDetail/taskroleList/0/instanceList/0/terminalUrl")
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty() && *value != "-")
-        .context("平台既未返回 SSH 连接，也未返回网页终端地址")?;
-    dev_web_terminal(api, terminal_url, remote_command).await
+    bail!("平台既未返回网页终端地址，也未返回 SSH 连接")
 }
 
 pub(crate) fn dev_system_ssh(connection: &str, remote_command: &[String]) -> Result<()> {
