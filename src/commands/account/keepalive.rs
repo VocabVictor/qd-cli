@@ -6,6 +6,8 @@ use crate::cli::Args;
 use crate::cli::option_u64;
 use crate::cli::print_json;
 use crate::config::Config;
+#[cfg(windows)]
+use std::{env, process::Command};
 
 #[cfg(windows)]
 pub(crate) const KEEPALIVE_TASK_NAME: &str = "qd-keepalive";
