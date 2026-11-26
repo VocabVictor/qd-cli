@@ -1,4 +1,32 @@
-use crate::*;
+use crate::prelude::*;
+use reqwest::Method;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::api::empty_object;
+use crate::cli::Args;
+use crate::cli::command_concurrency;
+use crate::cli::insert_if_missing;
+use crate::cli::print_json;
+use crate::cli::project_scope;
+use crate::cli::read_json;
+use crate::cli::remaining_ids;
+use crate::cli::required_id;
+use crate::cli::un_mangle_remote_path;
+use crate::commands::BulkAction;
+use crate::commands::bulk_action;
+use crate::commands::display_dev_tools;
+use crate::commands::extract_html_attribute;
+use crate::commands::list_scoped_dev_environments;
+use crate::commands::parse_dev_tools;
+use crate::config::Config;
+use crate::output::dev_summary;
+use crate::output::format_bytes;
+use crate::output::pointer_text;
+use crate::output::print_detail_response;
+use crate::output::print_dev_list;
+use crate::output::print_pretty_table;
+use crate::output::response_data;
+use crate::terminal::dev_terminal_transport;
 
 pub(crate) async fn dev_command(
     api: &ApiClient,

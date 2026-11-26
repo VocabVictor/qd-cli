@@ -11,7 +11,5 @@ __pycache__/
 live/
 *.exe
 
-# generated web bundle (built by build.rs from web-ui)
-/src/web/index.html
 .playwright/
 .playwright-cli/

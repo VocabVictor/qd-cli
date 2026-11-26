@@ -9,6 +9,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # 前端已在 Build web UI 步骤构建，build.rs 直接内嵌 web-ui/dist
+  QD_SKIP_WEB_BUILD: 1
 
 jobs:
   build:

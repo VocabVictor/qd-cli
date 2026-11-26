@@ -1,4 +1,23 @@
-use crate::*;
+use crate::prelude::*;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::api::empty_object;
+use crate::cli::Args;
+use crate::cli::command_concurrency;
+use crate::cli::pagination;
+use crate::cli::print_json;
+use crate::cli::remaining_ids;
+use crate::cli::required_id;
+use crate::cli::validate_id;
+use crate::commands::idle_resource_groups;
+use crate::commands::resource_node_command;
+use crate::commands::resource_nodes_command;
+use crate::config::Config;
+use crate::output::print_detail_response;
+use crate::output::print_idle_resources;
+use crate::output::print_resource_group_list;
+use crate::output::resource_group_summary;
+use crate::util::value_string;
 
 pub(crate) async fn resource_command(
     api: &ApiClient,

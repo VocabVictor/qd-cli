@@ -1,4 +1,7 @@
 use super::*;
+use crate::output::field_text;
+use crate::output::joined_fields;
+use crate::output::print_pretty_table;
 
 pub(crate) fn print_node_resource_detail(node: &Value) -> Result<()> {
     let rows = vec![

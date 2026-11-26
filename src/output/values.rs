@@ -1,4 +1,5 @@
-use crate::*;
+use crate::prelude::*;
+use crate::output::format_number;
 
 pub(crate) fn response_array<'a>(response: &'a Value, paths: &[&str]) -> &'a [Value] {
     paths

@@ -1,4 +1,7 @@
-use crate::*;
+use crate::prelude::*;
+use crate::output::format_memory_mib;
+use crate::output::format_number;
+use crate::output::print_pretty_table;
 
 pub(crate) fn print_idle_resources(groups: &[Value]) {
     let mut ordered: Vec<&Value> = groups.iter().collect();

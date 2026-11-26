@@ -1,4 +1,5 @@
-use crate::*;
+use crate::prelude::*;
+use tokio_tungstenite::tungstenite::Message;
 
 pub(crate) fn terminal_output(message: Message) -> Option<String> {
     let text = match message {

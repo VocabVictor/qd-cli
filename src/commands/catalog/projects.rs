@@ -1,4 +1,21 @@
-use crate::*;
+use crate::prelude::*;
+use reqwest::Method;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::api::empty_object;
+use crate::cli::Args;
+use crate::cli::apply_project_scope;
+use crate::cli::insert_if_missing;
+use crate::cli::pagination;
+use crate::cli::print_json;
+use crate::cli::project_scope;
+use crate::cli::read_json;
+use crate::cli::required_id;
+use crate::config::Config;
+use crate::output::print_detail_response;
+use crate::output::print_project_list;
+use crate::output::project_summary;
+use crate::output::response_array;
 
 pub(crate) async fn project_command(
     api: &ApiClient,

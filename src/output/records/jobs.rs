@@ -1,4 +1,10 @@
 use super::*;
+use crate::output::field_text;
+use crate::output::format_memory_mib;
+use crate::output::format_number;
+use crate::output::joined_fields;
+use crate::output::numeric_field;
+use crate::output::print_pretty_table;
 
 pub(super) fn print_node_jobs(node: &Value) {
     let jobs = node

@@ -1,4 +1,7 @@
-use crate::*;
+use crate::prelude::*;
+use crate::cli::Args;
+use crate::cli::print_json;
+use crate::config::Config;
 
 pub(crate) fn config_command(mut config: Config, args: &mut Args, compact: bool) -> Result<()> {
     match args.pop().as_deref() {

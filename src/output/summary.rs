@@ -1,4 +1,9 @@
-use crate::*;
+use crate::prelude::*;
+use crate::cli::print_json;
+use crate::output::field_text;
+use crate::output::numeric_field;
+use crate::output::print_pretty_table;
+use crate::util::value_string;
 
 pub(crate) fn format_memory_mib(value: f64) -> String {
     if value >= 1024.0 * 1024.0 {

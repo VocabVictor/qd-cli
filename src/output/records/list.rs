@@ -1,4 +1,10 @@
 use super::*;
+use crate::output::format_memory_mib;
+use crate::output::format_number;
+use crate::output::numeric_field;
+use crate::output::print_pretty_table;
+use crate::output::response_array;
+use crate::output::response_count;
 
 pub(crate) fn print_node_resource_list(response: &Value, include_jobs: bool) -> Result<()> {
     print_cluster_resource_summary(response);

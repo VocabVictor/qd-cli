@@ -1,4 +1,10 @@
-use crate::*;
+use crate::prelude::*;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::config::Config;
+use crate::util::value_string;
+use crate::util::value_u64;
+use std::time::Duration;
 
 pub(crate) fn result_is_terminal(result: &Value) -> bool {
     if result.get("ok").and_then(Value::as_bool) != Some(true) {

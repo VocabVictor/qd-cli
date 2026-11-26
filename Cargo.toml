@@ -2,6 +2,8 @@
 name = "qudongctl"
 version = "0.5.8"
 edition = "2024"
+# edition 2024 需要 1.85+；CI 固定在 1.92.0
+rust-version = "1.85"
 description = "Low-memory, high-concurrency CLI for a GPU training platform"
 license = "MIT"
 

@@ -2,7 +2,8 @@
 //! 与浏览器无关，换浏览器或清缓存都不会丢。
 
 use super::state::{WebError, WebResult, reply};
-use crate::*;
+use std::fs;
+use crate::prelude::*;
 
 use axum::{Json, extract::Path as UrlPath};
 use std::path::PathBuf;

@@ -1,4 +1,12 @@
-use crate::*;
+use crate::prelude::*;
+use crate::api::ApiClient;
+use crate::cli::Args;
+use crate::cli::print_json;
+use crate::cli::read_stdin_trimmed;
+use crate::config::Config;
+use crate::credentials::SavedCredentials;
+use crate::credentials::clear_string;
+use crate::session::Session;
 
 pub(crate) async fn login(config: &Config, args: &mut Args, compact: bool) -> Result<()> {
     let username = args

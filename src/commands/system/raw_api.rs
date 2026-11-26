@@ -1,4 +1,12 @@
-use crate::*;
+use crate::prelude::*;
+use reqwest::Method;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::api::empty_object;
+use crate::cli::Args;
+use crate::cli::print_json;
+use crate::cli::read_json;
+use crate::cli::un_mangle_remote_path;
 
 pub(crate) async fn raw_api_command(api: &ApiClient, args: &mut Args, compact: bool) -> Result<()> {
     let method: Method = args

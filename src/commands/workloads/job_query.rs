@@ -1,4 +1,18 @@
-use crate::*;
+use crate::prelude::*;
+use reqwest::Method;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::cli::find_id;
+use crate::cli::insert_if_missing;
+use crate::commands::attach_job_id;
+use crate::commands::job_show;
+use crate::commands::resolve_submitted_job;
+use crate::commands::validate_description;
+use crate::config::Config;
+use crate::util::scalar_string;
+use crate::util::unix_millis;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
 /// 提交任务：补 spaceId、POST /job/new、必要时回查 jobId 并塞回 data.jobId。
 pub(crate) async fn submit_job(api: &ApiClient, config: &Config, mut body: Value) -> Result<Value> {

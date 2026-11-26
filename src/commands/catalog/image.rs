@@ -1,4 +1,12 @@
-use crate::*;
+use crate::prelude::*;
+use crate::api::ApiClient;
+use crate::api::Service;
+use crate::cli::Args;
+use crate::cli::pagination;
+use crate::cli::print_json;
+use crate::config::Config;
+use crate::output::print_image_list;
+use crate::output::print_image_repository_list;
 
 pub(crate) async fn image_command(
     api: &ApiClient,

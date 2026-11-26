@@ -1,4 +1,20 @@
-use crate::*;
+use crate::prelude::*;
+use tokio_tungstenite::Connector;
+use tokio_tungstenite::connect_async_tls_with_config;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::http::HeaderValue;
+use tokio_tungstenite::tungstenite::http::header::ORIGIN;
+use std::io::Read;
+use std::io::Write;
+use crate::api::ApiClient;
+use crate::terminal::shell_quote;
+use crate::terminal::strip_terminal_control;
+use crate::terminal::terminal_output;
+use futures_util::SinkExt;
+use futures_util::StreamExt;
+use std::io;
+use std::time::Duration;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 pub(crate) type TerminalSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
